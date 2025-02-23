@@ -14,13 +14,20 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Use `upload.single("paymentImage")` only for file uploads
-router.post("/", upload.single("paymentImage"), orderController.createOrder);
+// Use correct file handling
+router.post(
+  "/",
+  upload.fields([
+    { name: "paymentImage", maxCount: 1 },
+    { name: "productImages", maxCount: 10 },
+  ]),
+  orderController.createOrder
+);
+
 router.get("/", orderController.getOrders);
 router.get("/:id", orderController.getOrderById);
-router.put("/:id", upload.single("paymentImage"), orderController.updateOrder);
+router.put("/:id", upload.fields([{ name: "paymentImage", maxCount: 1 }]), orderController.updateOrder);
 router.delete("/:id", orderController.deleteOrder);
 router.delete("/", orderController.deleteAllOrders);
-
 
 module.exports = router;
