@@ -32,25 +32,25 @@ app.get("/", (req, res) => {
 });
 
 // Import Routes
-const authRoutes = require("./routes/authRoutes");
+const authRoutes = require("./src/routes/authRoutes");
 app.use("/api/auth", authRoutes);
 
-const categoryRoutes = require("./routes/categoryRoutes");
+const categoryRoutes = require("./src/routes/categoryRoutes");
 app.use("/api/categories", categoryRoutes);
 
-const productRoutes = require("./routes/productRoutes");
+const productRoutes = require("./src/routes/productRoutes");
 app.use("/api/products", productRoutes);
 
-const orderRoutes = require("./routes/orderRoutes");
+const orderRoutes = require("./src/routes/orderRoutes");
 app.use("/api/orders", orderRoutes);
 
 const cartRoutes = require("./routes/cartRoutes");
 app.use("/api/cart", cartRoutes);
 
-const userRoute = require('./routes/userRoutes');
+const userRoute = require('./src/routes/userRoutes');
 app.use('/api/users', userRoute);
 
-const adsRoutes = require("./routes/adsRoutes");
+const adsRoutes = require("./src/routes/adsRoutes");
 app.use("/api/ads", adsRoutes);
 
 
