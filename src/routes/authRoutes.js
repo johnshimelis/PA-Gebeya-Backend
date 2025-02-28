@@ -4,6 +4,6 @@ const { registerUser, loginUser, verifyOTP } = require("../controllers/authContr
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-router.post("/verify-otp", verifyOTP);
+router.post("/verify-otp", verifyOTP);  
 
 module.exports = router;

@@ -18,11 +18,13 @@ const upload = multer({ storage });
 router.post(
   "/",
   upload.fields([
+    { name: "avatar", maxCount: 1 },  // ✅ Fix: Add avatar field
     { name: "paymentImage", maxCount: 1 },
     { name: "productImages", maxCount: 10 },
   ]),
   orderController.createOrder
 );
+
 
 router.get("/", orderController.getOrders);
 router.get("/:id", orderController.getOrderById);
