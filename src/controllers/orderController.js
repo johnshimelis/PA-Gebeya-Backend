@@ -1,11 +1,11 @@
 const Order = require("../models/Order");
+const Product = require("../models/Product"); // ✅ Import Product Model
 const multer = require("multer");
-const path = require("path");
 
 // ✅ Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Ensure this folder exists
+    cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
@@ -24,83 +24,113 @@ exports.createOrder = async (req, res) => {
     console.log("📌 Cleaned Request Body:", cleanedBody);
     console.log("📌 Uploaded Files:", req.files);
 
+    const userId = cleanedBody.userId || "Unknown ID";
     const name = cleanedBody.name || "Unknown";
     const amount = cleanedBody.amount ? parseFloat(cleanedBody.amount) : 0;
     const phoneNumber = cleanedBody.phoneNumber || "";
     const deliveryAddress = cleanedBody.deliveryAddress || "";
     const status = cleanedBody.status || "Pending";
 
-    // ✅ Handle avatar upload (Ensuring correct file path)
     const avatar = req.files["avatar"]
       ? `/uploads/${req.files["avatar"][0].filename}`
       : "/uploads/default-avatar.png";
 
     console.log("🖼️ Avatar Path Saved:", avatar);
 
-    // ✅ Handle payment image upload
     const paymentImage = req.files["paymentImage"]
       ? `/uploads/${req.files["paymentImage"][0].filename}`
       : null;
 
-    // ✅ Handle product images upload
     const productImages = req.files["productImages"]
       ? req.files["productImages"].map((file) => `/uploads/${file.filename}`)
       : [];
 
-    // ✅ Parse `orderDetails`
     let orderDetails = [];
     if (cleanedBody.orderDetails) {
       try {
         orderDetails = JSON.parse(cleanedBody.orderDetails);
-        orderDetails = orderDetails.map((item, index) => ({
-          product: item.product || "Unknown",
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          productImage: productImages[index] || null,
-        }));
+
+        orderDetails = await Promise.all(
+          orderDetails.map(async (item, index) => {
+            const product = await Product.findOne({ name: item.product });
+
+            if (!product) {
+              console.error(`❌ Product not found: ${item.product}`);
+              return null;
+            }
+
+            console.log(`✅ Found Product: ${product.name} - ID: ${product._id}`);
+
+            return {
+              productId: product._id, // ✅ Store actual product ID
+              product: item.product,
+              quantity: item.quantity || 1,
+              price: item.price || 0,
+              productImage: productImages[index] || null,
+            };
+          })
+        );
+
+        orderDetails = orderDetails.filter((item) => item !== null); // Remove null values if any
       } catch (error) {
         return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
       }
     }
 
-    // ✅ Auto-increment ID
+    console.log("✅ Final Order Details before saving:", orderDetails);
+
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
 
-    // ✅ Create new order with avatar & date
     const newOrder = new Order({
       id: newId,
+      userId,
       name,
       amount,
       status,
       phoneNumber,
       deliveryAddress,
-      avatar, // ✅ Store avatar correctly
+      avatar,
       paymentImage,
       orderDetails,
-      createdAt: new Date(), // ✅ Ensure date is stored
+      createdAt: new Date(),
     });
 
     await newOrder.save();
     res.status(201).json(newOrder);
   } catch (error) {
+    console.error("❌ Error creating order:", error.message);
     res.status(500).json({ error: error.message });
   }
 };
 
-// ✅ Update Order
+// ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
 exports.updateOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body; // Get updates dynamically
+    const updates = req.body;
 
     console.log("🔄 Updating Order:", updates);
 
-    // Ensure ID is a valid number
     const order = await Order.findOneAndUpdate({ id: parseInt(id) }, updates, { new: true });
 
     if (!order) {
       return res.status(404).json({ error: "Order not found!" });
+    }
+
+    // ✅ If status is "Delivered", update product stock & sold values
+    if (updates.status === "Delivered") {
+      for (const item of order.orderDetails) {
+        const product = await Product.findById(item.productId);
+
+        if (product) {
+          product.sold += item.quantity;
+          product.stockQuantity -= item.quantity;
+          await product.save();
+        } else {
+          console.error(`❌ Product not found for ID: ${item.productId}`);
+        }
+      }
     }
 
     res.status(200).json(order);
@@ -110,14 +140,14 @@ exports.updateOrder = async (req, res) => {
   }
 };
 
-// ✅ Get all Orders (Include Avatar & Date)
+// ✅ Get all Orders
 exports.getOrders = async (req, res) => {
   try {
     const orders = await Order.find().select(
-      "id name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
+      "id userId name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
     );
 
-    console.log("📤 Orders Fetched from Database:", JSON.stringify(orders, null, 2)); // 🔍 Debug log
+    console.log("📤 Orders Fetched from Database:", JSON.stringify(orders, null, 2));
 
     res.json(orders);
   } catch (error) {
@@ -126,12 +156,11 @@ exports.getOrders = async (req, res) => {
   }
 };
 
-
-// ✅ Get Order by ID
+// ✅ Get Order By ID
 exports.getOrderById = async (req, res) => {
   try {
     const order = await Order.findOne({ id: req.params.id }).select(
-      "id name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
+      "id userId name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
     );
     if (!order) return res.status(404).json({ message: "Order not found" });
     res.json(order);

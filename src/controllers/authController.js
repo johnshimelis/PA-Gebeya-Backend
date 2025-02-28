@@ -1,11 +1,13 @@
 require("dotenv").config();
 const User = require("../models/Users");
+const UserOrder = require("../models/UserOrder");
+const Message = require("../models/Message");
+const Notification = require("../models/Notification");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 
 const sendOTP = async (email, otp) => {
-  // Use port 465 for SSL
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST || "smtp.gmail.com",
     port: process.env.EMAIL_PORT || 465,
@@ -15,7 +17,6 @@ const sendOTP = async (email, otp) => {
       pass: process.env.EMAIL_PASS,
     },
   });
-  
 
   const mailOptions = {
     from: `"Support Team" <${process.env.EMAIL_USER}>`,
@@ -98,16 +99,35 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "OTP expired" });
     }
 
+    // Generate a JWT token for the user
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
 
-    res.status(200).json({ message: "Login successful", token });
+    // Fetch the user's personalized data
+    const orders = await UserOrder.find({ userId: user._id }).select('date status total');
+    const messages = await Message.find({ userId: user._id }).select('from message read date');
+    const notifications = await Notification.find({ userId: user._id }).select('message date');
+
+    res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        userId: user._id, // Include the userId in the response
+        fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        orders,
+        messages,
+        notifications,
+      },
+    });
   } catch (error) {
     console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 module.exports = {
   registerUser,
