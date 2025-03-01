@@ -7,16 +7,15 @@ const Notification = require("../models/Notification");
 
 // ===================== CRUD Operations for Orders =====================
 
-// Create Order for a specific user
+// Create Order
 router.post("/orders", authMiddleware, async (req, res) => {
-  const { date, status, total } = req.body;
+  const { userId, date, status, total } = req.body;
+  if (!userId || !date || !status || total === undefined) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
   try {
-    const newOrder = new UserOrder({
-      userId: req.userId,
-      date,
-      status,
-      total,
-    });
+    const newOrder = new UserOrder({ userId, date, status, total });
     await newOrder.save();
     res.status(201).json({ message: "Order created successfully", newOrder });
   } catch (error) {
@@ -25,10 +24,10 @@ router.post("/orders", authMiddleware, async (req, res) => {
   }
 });
 
-// Fetch User Orders
+// Fetch All Orders
 router.get("/orders", authMiddleware, async (req, res) => {
   try {
-    const orders = await UserOrder.find({ userId: req.userId });
+    const orders = await UserOrder.find();
     res.json({ orders });
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -36,115 +35,120 @@ router.get("/orders", authMiddleware, async (req, res) => {
   }
 });
 
-// Update Order for a specific user
+// Fetch Orders by User ID
+router.get("/orders/:userId", authMiddleware, async (req, res) => {
+  try {
+    const orders = await UserOrder.find({ userId: req.params.userId });
+    res.json({ orders });
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({ message: "Error fetching orders" });
+  }
+});
+
+// Update Order
 router.put("/orders/:orderId", authMiddleware, async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const updatedOrder = await UserOrder.findOneAndUpdate(
-      { _id: orderId, userId: req.userId }, 
-      req.body, 
-      { new: true } // Return the updated document
+    const updatedOrder = await UserOrder.findByIdAndUpdate(
+      req.params.orderId,
+      req.body,
+      { new: true }
     );
-    if (!updatedOrder) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+    if (!updatedOrder) return res.status(404).json({ message: "Order not found" });
     res.json({ message: "Order updated successfully", updatedOrder });
   } catch (error) {
-    console.error("Error updating order:", error);
     res.status(500).json({ message: "Error updating order" });
   }
 });
 
-// Delete Order for a specific user
+// Delete Order
 router.delete("/orders/:orderId", authMiddleware, async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const deletedOrder = await UserOrder.findOneAndDelete({ _id: orderId, userId: req.userId });
-    if (!deletedOrder) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+    const deletedOrder = await UserOrder.findByIdAndDelete(req.params.orderId);
+    if (!deletedOrder) return res.status(404).json({ message: "Order not found" });
     res.json({ message: "Order deleted successfully" });
   } catch (error) {
-    console.error("Error deleting order:", error);
     res.status(500).json({ message: "Error deleting order" });
   }
 });
 
 // ===================== CRUD Operations for Messages =====================
 
-// Create Message for a specific user
+// Create Message
 router.post("/messages", authMiddleware, async (req, res) => {
-  const { from, message } = req.body;
+  const { userId, from, message } = req.body;
+
+  if (!userId || !from || !message) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
   try {
-    const newMessage = new Message({
-      userId: req.userId,
-      from,
-      message,
-      read: false,
-    });
+    const newMessage = new Message({ userId, from, message, read: false });
     await newMessage.save();
     res.status(201).json({ message: "Message sent successfully", newMessage });
   } catch (error) {
-    console.error("Error sending message:", error);
     res.status(500).json({ message: "Error sending message" });
   }
 });
 
-// Fetch User Messages
+// Fetch All Messages
 router.get("/messages", authMiddleware, async (req, res) => {
   try {
-    const messages = await Message.find({ userId: req.userId });
+    const messages = await Message.find();
     res.json({ messages });
   } catch (error) {
-    console.error("Error fetching messages:", error);
     res.status(500).json({ message: "Error fetching messages" });
   }
 });
 
-// Update Message for a specific user
+// Fetch Messages by User ID
+router.get("/messages/:userId", authMiddleware, async (req, res) => {
+  try {
+    const messages = await Message.find({ userId: req.params.userId });
+    res.json({ messages });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching messages" });
+  }
+});
+
+// Update Message
 router.put("/messages/:messageId", authMiddleware, async (req, res) => {
   try {
-    const { messageId } = req.params;
-    const updatedMessage = await Message.findOneAndUpdate(
-      { _id: messageId, userId: req.userId },
+    const updatedMessage = await Message.findByIdAndUpdate(
+      req.params.messageId,
       req.body,
       { new: true }
     );
-    if (!updatedMessage) {
-      return res.status(404).json({ message: "Message not found" });
-    }
+    if (!updatedMessage) return res.status(404).json({ message: "Message not found" });
     res.json({ message: "Message updated successfully", updatedMessage });
   } catch (error) {
-    console.error("Error updating message:", error);
     res.status(500).json({ message: "Error updating message" });
   }
 });
 
-// Delete Message for a specific user
+// Delete Message
 router.delete("/messages/:messageId", authMiddleware, async (req, res) => {
   try {
-    const { messageId } = req.params;
-    const deletedMessage = await Message.findOneAndDelete({ _id: messageId, userId: req.userId });
-    if (!deletedMessage) {
-      return res.status(404).json({ message: "Message not found" });
-    }
+    const deletedMessage = await Message.findByIdAndDelete(req.params.messageId);
+    if (!deletedMessage) return res.status(404).json({ message: "Message not found" });
     res.json({ message: "Message deleted successfully" });
   } catch (error) {
-    console.error("Error deleting message:", error);
     res.status(500).json({ message: "Error deleting message" });
   }
 });
 
 // ===================== CRUD Operations for Notifications =====================
 
-// Create Notification for a specific user
+// Create Notification
 router.post("/notifications", authMiddleware, async (req, res) => {
-  const { message } = req.body;
+  const { userId, message } = req.body;
+
+  if (!userId || !message) {
+    return res.status(400).json({ message: "User ID and message are required" });
+  }
+
   try {
-    const newNotification = new Notification({
-      userId: req.userId,
-      message,
-    });
+    const newNotification = new Notification({ userId, message });
     await newNotification.save();
     res.status(201).json({ message: "Notification created successfully", newNotification });
   } catch (error) {
@@ -153,47 +157,48 @@ router.post("/notifications", authMiddleware, async (req, res) => {
   }
 });
 
-// Fetch User Notifications
+// Fetch All Notifications
 router.get("/notifications", authMiddleware, async (req, res) => {
   try {
-    const notifications = await Notification.find({ userId: req.userId });
+    const notifications = await Notification.find();
     res.json({ notifications });
   } catch (error) {
-    console.error("Error fetching notifications:", error);
     res.status(500).json({ message: "Error fetching notifications" });
   }
 });
 
-// Update Notification for a specific user
+// Fetch Notifications by User ID
+router.get("/notifications/:userId", authMiddleware, async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.params.userId });
+    res.json({ notifications });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching notifications" });
+  }
+});
+
+// Update Notification
 router.put("/notifications/:notificationId", authMiddleware, async (req, res) => {
   try {
-    const { notificationId } = req.params;
-    const updatedNotification = await Notification.findOneAndUpdate(
-      { _id: notificationId, userId: req.userId },
+    const updatedNotification = await Notification.findByIdAndUpdate(
+      req.params.notificationId,
       req.body,
       { new: true }
     );
-    if (!updatedNotification) {
-      return res.status(404).json({ message: "Notification not found" });
-    }
+    if (!updatedNotification) return res.status(404).json({ message: "Notification not found" });
     res.json({ message: "Notification updated successfully", updatedNotification });
   } catch (error) {
-    console.error("Error updating notification:", error);
     res.status(500).json({ message: "Error updating notification" });
   }
 });
 
-// Delete Notification for a specific user
+// Delete Notification
 router.delete("/notifications/:notificationId", authMiddleware, async (req, res) => {
   try {
-    const { notificationId } = req.params;
-    const deletedNotification = await Notification.findOneAndDelete({ _id: notificationId, userId: req.userId });
-    if (!deletedNotification) {
-      return res.status(404).json({ message: "Notification not found" });
-    }
+    const deletedNotification = await Notification.findByIdAndDelete(req.params.notificationId);
+    if (!deletedNotification) return res.status(404).json({ message: "Notification not found" });
     res.json({ message: "Notification deleted successfully" });
   } catch (error) {
-    console.error("Error deleting notification:", error);
     res.status(500).json({ message: "Error deleting notification" });
   }
 });
