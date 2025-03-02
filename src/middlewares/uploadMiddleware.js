@@ -1,21 +1,31 @@
 const path = require("path");
 const multer = require("multer");
+const fs = require("fs");
+
+// Ensure 'uploads' folder exists
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = Date.now() + path.extname(file.originalname);
+    if (!file) {
+      return cb(new Error("❌ No file provided"), null);
+    }
+    const uniqueName = Date.now() + "-" + file.originalname.replace(/\s+/g, "_"); // Remove spaces
     cb(null, uniqueName);
-  }
+  },
 });
 
-// Allow only images & handle empty file cases
+// Allow only images
 const fileFilter = (req, file, cb) => {
   if (!file) {
-    return cb(null, false); // No file provided (handle gracefully)
+    return cb(new Error("❌ No file uploaded"), false);
   }
 
   const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/avif"];
@@ -26,7 +36,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Define upload limits (e.g., max file size: 5MB)
+// Upload limits
 const upload = multer({
   storage,
   fileFilter,
@@ -41,6 +51,7 @@ const uploadImage = (req, res, next) => {
     } else if (err) {
       return res.status(400).json({ error: `❌ File upload error: ${err.message}` });
     }
+    console.log("✅ File uploaded:", req.file.path);
     next();
   });
 };
