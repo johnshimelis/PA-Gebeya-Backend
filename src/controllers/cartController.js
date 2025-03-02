@@ -80,8 +80,8 @@ exports.removeFromCart = async (req, res) => {
 // Update item quantity in the cart
 exports.updateCartItem = async (req, res) => {
   try {
-    const { quantity } = req.body;
-    const userId = req.user.id;
+    const { quantity } = req.body;  // Get quantity from the request body
+    const userId = req.user.id;  // Get the user ID
     const cart = await Cart.findOne({ userId });
 
     if (!cart) return res.status(404).json({ message: "Cart not found" });
@@ -89,14 +89,19 @@ exports.updateCartItem = async (req, res) => {
     const item = cart.items.find((item) => item.productId.toString() === req.params.id);
     if (!item) return res.status(404).json({ message: "Item not found in cart" });
 
+    // Ensure quantity is always a number and update it
     item.quantity = Number(quantity);
+
+    // Save the updated cart to the database
     await cart.save();
 
+    // Respond with the updated cart
     res.json(cart);
   } catch (error) {
     res.status(500).json({ message: "Failed to update quantity", error });
   }
 };
+
 
 // Clear the entire cart
 // Clear the entire cart by userId
@@ -119,4 +124,21 @@ exports.clearCartByUserId = async (req, res) => {
   }
 };
 
+// Get a specific cart item by productId
+exports.getCartItem = async (req, res) => {
+  try {
+    const userId = req.user.id; // Get user ID from auth middleware
+    const { productId } = req.params;
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+    const item = cart.items.find(item => item.productId.toString() === productId);
+    if (!item) return res.status(404).json({ message: "Item not found in cart" });
+
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to get item", error });
+  }
+};
 

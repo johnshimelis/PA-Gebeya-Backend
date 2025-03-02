@@ -9,20 +9,34 @@ const Notification = require("../models/Notification");
 
 // Create Order
 router.post("/orders", authMiddleware, async (req, res) => {
-  const { userId, date, status, total } = req.body;
-  if (!userId || !date || !status || total === undefined) {
-    return res.status(400).json({ message: "All fields are required" });
+  const { userId, date, status, total, orderId } = req.body;  // Include orderId in the destructuring
+
+  // Validate input fields
+  if (!userId || !date || !status || total === undefined || !orderId) {
+    return res.status(400).json({ message: "All fields are required, including orderId" });
   }
 
   try {
-    const newOrder = new UserOrder({ userId, date, status, total });
+    // Create a new order with the provided orderId
+    const newOrder = new UserOrder({
+      userId,
+      date,
+      status,
+      total,
+      orderId, // Add the provided orderId to the order
+    });
+
+    // Save the new order to the database
     await newOrder.save();
+
+    // Send a success response with the new order
     res.status(201).json({ message: "Order created successfully", newOrder });
   } catch (error) {
     console.error("Error creating order:", error);
     res.status(500).json({ message: "Error creating order" });
   }
 });
+
 
 // Fetch All Orders
 router.get("/orders", authMiddleware, async (req, res) => {
@@ -61,16 +75,40 @@ router.put("/orders/:orderId", authMiddleware, async (req, res) => {
   }
 });
 
-// Delete Order
+// Get Order by orderId and userId
+router.get("/orders/:orderId/:userId", authMiddleware, async (req, res) => {
+  try {
+    // Find the order using both orderId and userId
+    const order = await UserOrder.findOne({ orderId: req.params.orderId, userId: req.params.userId });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Send the order details back
+    res.json({ order });
+  } catch (error) {
+    res.status(500).json({ message: "Error retrieving order" });
+  }
+});
+
+
+// Delete Order by orderId
 router.delete("/orders/:orderId", authMiddleware, async (req, res) => {
   try {
-    const deletedOrder = await UserOrder.findByIdAndDelete(req.params.orderId);
-    if (!deletedOrder) return res.status(404).json({ message: "Order not found" });
+    // Find and delete the order by orderId
+    const deletedOrder = await UserOrder.findOneAndDelete({ orderId: req.params.orderId });
+
+    if (!deletedOrder) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
     res.json({ message: "Order deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting order" });
   }
 });
+
 
 // ===================== CRUD Operations for Messages =====================
 
@@ -139,16 +177,21 @@ router.delete("/messages/:messageId", authMiddleware, async (req, res) => {
 
 // ===================== CRUD Operations for Notifications =====================
 
-// Create Notification
 router.post("/notifications", authMiddleware, async (req, res) => {
-  const { userId, message } = req.body;
+  const { userId, orderId, message } = req.body;
 
   if (!userId || !message) {
     return res.status(400).json({ message: "User ID and message are required" });
   }
 
   try {
-    const newNotification = new Notification({ userId, message });
+    // ✅ Store orderId as a string
+    const newNotification = new Notification({
+      userId,
+      orderId: orderId ? String(orderId) : null,
+      message,
+    });
+
     await newNotification.save();
     res.status(201).json({ message: "Notification created successfully", newNotification });
   } catch (error) {
@@ -157,12 +200,16 @@ router.post("/notifications", authMiddleware, async (req, res) => {
   }
 });
 
-// Fetch All Notifications
+// Fetch Notifications for Logged-in User
 router.get("/notifications", authMiddleware, async (req, res) => {
   try {
-    const notifications = await Notification.find();
+    const userId = req.user.id; // Extract user ID from auth middleware
+
+    const notifications = await Notification.find({ userId }).sort({ date: -1 });
+
     res.json({ notifications });
   } catch (error) {
+    console.error("Error fetching notifications:", error);
     res.status(500).json({ message: "Error fetching notifications" });
   }
 });
@@ -170,9 +217,11 @@ router.get("/notifications", authMiddleware, async (req, res) => {
 // Fetch Notifications by User ID
 router.get("/notifications/:userId", authMiddleware, async (req, res) => {
   try {
-    const notifications = await Notification.find({ userId: req.params.userId });
+    const notifications = await Notification.find({ userId: req.params.userId }).sort({ date: -1 });
+
     res.json({ notifications });
   } catch (error) {
+    console.error("Error fetching notifications:", error);
     res.status(500).json({ message: "Error fetching notifications" });
   }
 });
@@ -185,20 +234,30 @@ router.put("/notifications/:notificationId", authMiddleware, async (req, res) =>
       req.body,
       { new: true }
     );
+
     if (!updatedNotification) return res.status(404).json({ message: "Notification not found" });
+
     res.json({ message: "Notification updated successfully", updatedNotification });
   } catch (error) {
+    console.error("Error updating notification:", error);
     res.status(500).json({ message: "Error updating notification" });
   }
 });
 
-// Delete Notification
+// Delete Notification (Only if it belongs to the user)
 router.delete("/notifications/:notificationId", authMiddleware, async (req, res) => {
   try {
-    const deletedNotification = await Notification.findByIdAndDelete(req.params.notificationId);
-    if (!deletedNotification) return res.status(404).json({ message: "Notification not found" });
+    const notification = await Notification.findById(req.params.notificationId);
+    if (!notification) return res.status(404).json({ message: "Notification not found" });
+
+    if (notification.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized to delete this notification" });
+    }
+
+    await notification.deleteOne();
     res.json({ message: "Notification deleted successfully" });
   } catch (error) {
+    console.error("Error deleting notification:", error);
     res.status(500).json({ message: "Error deleting notification" });
   }
 });
