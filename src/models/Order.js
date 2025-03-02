@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const OrderSchema = new mongoose.Schema(
   {
     id: { type: Number, required: true, unique: true },
-    userId: { type: String, required: true }, // ✅ Store user ID
+    userId: { type: String, required: true }, 
     name: { type: String, required: true },
     amount: { type: Number, required: true },
     status: { type: String, default: "Pending" },
@@ -13,7 +13,7 @@ const OrderSchema = new mongoose.Schema(
     avatar: { type: String, default: "/uploads/default-avatar.png" },
     orderDetails: [
       {
-        productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true }, // ✅ Added productId
+        productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true }, 
         product: { type: String, required: true },
         quantity: { type: Number, required: true },
         price: { type: Number, required: true },
