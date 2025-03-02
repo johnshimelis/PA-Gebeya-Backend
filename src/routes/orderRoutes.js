@@ -24,6 +24,7 @@ router.post(
   ]),
   orderController.createOrder
 );
+router.get("/:orderId/:userId", orderController.getOrderByOrderIdAndUserId);
 
 
 router.get("/", orderController.getOrders);

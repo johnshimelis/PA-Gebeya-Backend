@@ -189,3 +189,21 @@ exports.deleteAllOrders = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+exports.getOrderByOrderIdAndUserId = async (req, res) => {
+  const { orderId, userId } = req.params;
+  console.log("Fetching order for:", orderId, userId); // Log the parameters
+
+  try {
+    const order = await Order.findOne({ id: orderId, userId: userId });
+
+    if (!order) {
+      console.log(`No order found for orderId: ${orderId} and userId: ${userId}`);
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    res.json({ order });
+  } catch (error) {
+    console.error("Error retrieving order details:", error);
+    res.status(500).json({ message: "Error retrieving order details" });
+  }
+};
