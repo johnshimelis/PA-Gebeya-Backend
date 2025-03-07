@@ -38,7 +38,7 @@ router.get("/:id", productController.getProductById);
 router.put("/:id", upload.single("image"), productController.updateProduct);
 router.delete("/:id", productController.deleteProduct);
 
-// Error Handling Middleware for Multer
+// Error Handling Middle  ware for Multer
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ message: err.message });
