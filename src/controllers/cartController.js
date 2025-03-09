@@ -23,42 +23,48 @@ exports.addToCart = async (req, res) => {
       Object.entries(req.body).map(([key, value]) => [key.trim(), value])
     );
 
-    const { userId, productId, productName, price, quantity } = sanitizedBody;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    // Destructure fields from the request body
+    const { userId, productId, productName, price, quantity, img } = sanitizedBody;
 
     // Validate required fields
     if (!userId || !productId || !productName || price === undefined) {
       return res.status(400).json({ error: "Missing required fields", receivedData: sanitizedBody });
     }
 
+    // Find or create the user's cart
     let cart = await Cart.findOne({ userId });
 
     if (!cart) {
       cart = new Cart({ userId, items: [] });
     }
 
+    // Check if the product already exists in the cart
     const existingItem = cart.items.find(item => item.productId.toString() === productId);
 
     if (existingItem) {
+      // Update quantity if the product already exists
       existingItem.quantity += Number(quantity) || 1;
     } else {
+      // Add a new item to the cart
       cart.items.push({
         productId,
         productName,
-        img: imageUrl,
+        img: img || null, // Use the provided image URL or default to null
         price: Number(price),
         quantity: Number(quantity) || 1,
       });
     }
 
+    // Save the updated cart
     await cart.save();
+
+    // Respond with success
     res.status(200).json({ message: "Item added to cart", cart });
   } catch (error) {
     console.error("Error adding to cart:", error);
     res.status(500).json({ error: "Server error" });
   }
 };
-
 
 // Remove an item from the cart
 exports.removeFromCart = async (req, res) => {
