@@ -17,15 +17,9 @@ app.use(cors({
 // ✅ Middleware
 app.use(express.json()); // Parses JSON requests
 app.use(express.urlencoded({ extended: true })); // Parses URL-encoded form data
+app.use("/uploads", express.static(path.join(__dirname, "uploads"))); // Serve static files
 
-// ✅ Serve static files with CORS headers
-app.use("/uploads", (req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*"); // Allow requests from any domain
-    res.header("Access-Control-Allow-Methods", "GET"); // Allow only GET requests for static files
-    next();
-}, express.static(path.join(__dirname, "uploads")));
-
-// ✅ MongoDB Connection
+// Connect to MongoDB
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/pa-gebeya";
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("✅ MongoDB Connected"))
@@ -60,4 +54,4 @@ app.use("/api/ads", adsRoutes);
 
 // ✅ Start Server on Port 5000
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

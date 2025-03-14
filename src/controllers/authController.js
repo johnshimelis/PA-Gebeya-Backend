@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 
+// Helper function to send OTP via email
 const sendOTP = async (email, otp) => {
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST || "smtp.gmail.com",
@@ -34,6 +35,7 @@ const sendOTP = async (email, otp) => {
   }
 };
 
+// Register a new user
 const registerUser = async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
 
@@ -61,6 +63,7 @@ const registerUser = async (req, res) => {
   }
 };
 
+// Login user by sending OTP
 const loginUser = async (req, res) => {
   const { phoneNumber } = req.body;
 
@@ -86,6 +89,7 @@ const loginUser = async (req, res) => {
   }
 };
 
+// Verify OTP and generate a non-expiring JWT token
 const verifyOTP = async (req, res) => {
   const { phoneNumber, otp } = req.body;
 
@@ -99,15 +103,13 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "OTP expired" });
     }
 
-    // Generate a JWT token for the user
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    // Generate a JWT token without an expiration time
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
 
     // Fetch the user's personalized data
-    const orders = await UserOrder.find({ userId: user._id }).select('date status total');
-    const messages = await Message.find({ userId: user._id }).select('from message read date');
-    const notifications = await Notification.find({ userId: user._id }).select('message date');
+    const orders = await UserOrder.find({ userId: user._id }).select("date status total");
+    const messages = await Message.find({ userId: user._id }).select("from message read date");
+    const notifications = await Notification.find({ userId: user._id }).select("message date");
 
     res.status(200).json({
       message: "Login successful",
@@ -127,7 +129,6 @@ const verifyOTP = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 module.exports = {
   registerUser,
