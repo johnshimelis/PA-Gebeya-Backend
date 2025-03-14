@@ -9,31 +9,32 @@ const Notification = require("../models/Notification");
 
 // Create Order
 router.post("/orders", authMiddleware, async (req, res) => {
-  const { userId, date, status, total, orderId } = req.body;  // Include orderId in the destructuring
+  const { userId, date, status, total, orderId } = req.body;
 
-  // Validate input fields
   if (!userId || !date || !status || total === undefined || !orderId) {
     return res.status(400).json({ message: "All fields are required, including orderId" });
   }
 
   try {
-    // Create a new order with the provided orderId
+    // Check if orderId already exists
+    const existingOrder = await UserOrder.findOne({ orderId });
+    if (existingOrder) {
+      return res.status(400).json({ message: "Order with this ID already exists" });
+    }
+
     const newOrder = new UserOrder({
       userId,
       date,
       status,
       total,
-      orderId, // Add the provided orderId to the order
+      orderId,
     });
 
-    // Save the new order to the database
     await newOrder.save();
-
-    // Send a success response with the new order
     res.status(201).json({ message: "Order created successfully", newOrder });
   } catch (error) {
     console.error("Error creating order:", error);
-    res.status(500).json({ message: "Error creating order" });
+    res.status(500).json({ message: "Error creating order", error: error.message });
   }
 });
 
@@ -177,6 +178,7 @@ router.delete("/messages/:messageId", authMiddleware, async (req, res) => {
 
 // ===================== CRUD Operations for Notifications =====================
 
+// Create Notification
 router.post("/notifications", authMiddleware, async (req, res) => {
   const { userId, orderId, message } = req.body;
 
@@ -185,7 +187,6 @@ router.post("/notifications", authMiddleware, async (req, res) => {
   }
 
   try {
-    // ✅ Store orderId as a string
     const newNotification = new Notification({
       userId,
       orderId: orderId ? String(orderId) : null,
@@ -196,10 +197,9 @@ router.post("/notifications", authMiddleware, async (req, res) => {
     res.status(201).json({ message: "Notification created successfully", newNotification });
   } catch (error) {
     console.error("Error creating notification:", error);
-    res.status(500).json({ message: "Error creating notification" });
+    res.status(500).json({ message: "Error creating notification", error: error.message });
   }
 });
-
 // Fetch Notifications for Logged-in User
 router.get("/notifications", authMiddleware, async (req, res) => {
   try {
