@@ -288,3 +288,41 @@ exports.deleteProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+// Get products by category
+exports.getProductsByCategory = async (req, res) => {
+  try {
+    const categoryId = req.params.categoryId;
+
+    // Validate category ID
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
+
+    // Check if the category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    // Fetch products by category
+    const products = await Product.find({ category: categoryId }).populate("category", "name");
+
+    // Add the base URL for the image
+    const productsWithImageUrl = products.map((product) => ({
+      _id: product._id,
+      name: product.name,
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      discount: product.discount,
+      hasDiscount: product.hasDiscount,
+      image: product.image
+        ? `${req.protocol}://${req.get("host")}/uploads/${product.image}`
+        : null,
+    }));
+
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
