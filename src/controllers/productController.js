@@ -289,7 +289,8 @@ exports.deleteProduct = async (req, res) => {
   }
 };
 
-// Get products by category
+const mongoose = require("mongoose");
+
 exports.getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
@@ -323,6 +324,7 @@ exports.getProductsByCategory = async (req, res) => {
 
     res.json(productsWithImageUrl);
   } catch (error) {
+    console.error("Error fetching products by category:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
