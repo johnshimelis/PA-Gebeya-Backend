@@ -7,7 +7,7 @@ const productSchema = new mongoose.Schema(
     shortDescription: { type: String, required: true },
     fullDescription: { type: String, required: true },
     stockQuantity: { type: Number, required: true },
-    sold: { type: Number, required: false, default: 0 }, // New field to track sold items
+    sold: { type: Number, required: false, default: 0 },
     category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
     image: { type: String, required: false },
     discount: { type: Number, required: false, default: 0 },
