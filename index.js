@@ -35,7 +35,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use(express.urlencoded({ extended: true })); // Parses URL-encoded form data
 
 // Connect to MongoDB
