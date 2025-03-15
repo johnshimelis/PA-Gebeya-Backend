@@ -6,34 +6,16 @@ require("dotenv").config();
 
 const app = express();
 
-// Allowed origins
-const allowedOrigins = [
-  "https://sprightly-sawine-43e5c3.netlify.app",
-  "https://chimerical-lebkuchen-58351a.netlify.app"
-];
-
 // Middleware
 app.use(express.json());
 app.use(
   cors({
-    origin: allowedOrigins, // Allow both Netlify frontends
+    origin: "*", // Allow all domains
     credentials: true, // Allow cookies and authentication headers
     methods: ["GET", "POST", "PUT", "DELETE"], // Allowed HTTP methods
     allowedHeaders: ["Content-Type", "Authorization"], // Allowed headers
   })
 );
-
-// Manually set CORS headers for all responses
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-  }
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.header("Access-Control-Allow-Credentials", "true");
-  next();
-});
 
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use(express.urlencoded({ extended: true })); // Parses URL-encoded form data
@@ -65,11 +47,12 @@ app.use("/api/orders", orderRoutes);
 const cartRoutes = require("./routes/cartRoutes");
 app.use("/api/cart", cartRoutes);
 
-const userRoute = require("./routes/userRoutes");
-app.use("/api/users", userRoute);
+const userRoute = require('./routes/userRoutes');
+app.use('/api/users', userRoute);
 
 const adsRoutes = require("./routes/adsRoutes");
 app.use("/api/ads", adsRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
