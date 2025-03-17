@@ -1,49 +1,77 @@
+const express = require("express");
+const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const multer = require("multer");
-const Category = require("../models/Category");
+const Category = require("../models/Category"); // Adjust the path based on your project structure
 
-// Ensure 'uploads' directory exists at project root
-const uploadDir = path.join(__dirname, "../../uploads/");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const router = express.Router();
+
+// Ensure the 'uploads' directory exists outside the project folder
+const UPLOADS_DIR = path.join(__dirname, "../../uploads"); // Store outside project directory
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Configure Multer storage
+// Multer storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir);
+    cb(null, UPLOADS_DIR); // Save images in persistent storage
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, `${Date.now()}-${file.originalname}`);
   },
 });
 
-const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files are allowed!"), false);
-    }
+const allowedMimeTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/bmp",
+  "image/tiff",
+  "image/svg+xml",
+  "image/avif",
+  "application/octet-stream",
+];
+
+const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".avif"];
+
+const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
     cb(null, true);
-  },
-});
+  } else {
+    cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
+  }
+};
 
-// ✅ Create a new category (with image upload)
-const createCategory = async (req, res) => {
+const upload = multer({ storage, fileFilter });
+
+// Serve static category images
+router.use("/uploads", express.static(UPLOADS_DIR));
+
+// Create a new category
+router.post("/categories", upload.single("image"), async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) return res.status(400).json({ error: "Category name is required" });
+    if (!name) {
+      return res.status(400).json({ message: "Category name is required" });
+    }
 
-    const imagePath = req.file ? req.file.filename : null;
-    const newCategory = new Category({ name, image: imagePath });
+    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+
+    const newCategory = new Category({
+      name,
+      image: imagePath,
+    });
+
     await newCategory.save();
-
-    res.status(201).json({ message: "Category created successfully", category: newCategory });
+    res.status(201).json(newCategory);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-};
+});
 
 // ✅ Get all categories
 const getCategories = async (req, res) => {
