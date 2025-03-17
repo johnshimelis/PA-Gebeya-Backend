@@ -52,41 +52,46 @@ const upload = multer({ storage, fileFilter });
 router.use("/uploads", express.static(UPLOADS_DIR));
 
 // Create a new category
-const createCategory = async (req, res) => {
+createCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) {
-      return res.status(400).json({ message: "Category name is required" });
+    let imageUrl = "";
+
+    // Check if an image is uploaded
+    if (req.file) {
+      imageUrl = `https://pa-gebeya-backend.onrender.com/uploads/${req.file.filename}`;
     }
 
-    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
-
-    const newCategory = new Category({
+    const category = new Category({
       name,
-      image: imagePath,
+      image: imageUrl, // Ensure correct image URL format
     });
 
-    await newCategory.save();
-    res.status(201).json(newCategory);
+    await category.save();
+    res.status(201).json(category);
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ error: "Failed to create category" });
   }
 };
 
-// ✅ Get all categories
-const getCategories = async (req, res) => {
+// Fetch all categories
+getCategories = async (req, res) => {
   try {
     const categories = await Category.find();
-    const categoriesWithImageUrl = categories.map((category) => ({
-      ...category.toObject(),
-      image: category.image ? `${req.protocol}://${req.get("host")}/uploads/${category.image}` : null,
+
+    // Ensure all images have the correct URL format
+    const formattedCategories = categories.map((category) => ({
+      ...category._doc,
+      image: category.image.startsWith("http")
+        ? category.image
+        : `https://pa-gebeya-backend.onrender.com/uploads/${category.image.replace("/uploads/", "")}`,
     }));
-    res.status(200).json(categoriesWithImageUrl);
+
+    res.status(200).json(formattedCategories);
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ error: "Failed to fetch categories" });
   }
 };
-
 // ✅ Get a single category by ID
 const getCategoryById = async (req, res) => {
   try {
