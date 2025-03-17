@@ -9,14 +9,16 @@ const app = express();
 // Allowed origins
 const allowedOrigins = [
   "https://sprightly-sawine-43e5c3.netlify.app",
-  "https://chimerical-lebkuchen-58351a.netlify.app"
+  "https://chimerical-lebkuchen-58351a.netlify.app",
+  "http://localhost:3000", // Add localhost:3000
+  "http://localhost:3001", // Add localhost:3001
 ];
 
 // Middleware
 app.use(express.json());
 app.use(
   cors({
-    origin: allowedOrigins, // Allow both Netlify frontends
+    origin: allowedOrigins, // Allow both Netlify frontends and localhost
     credentials: true, // Allow cookies and authentication headers
     methods: ["GET", "POST", "PUT", "DELETE"], // Allowed HTTP methods
     allowedHeaders: ["Content-Type", "Authorization"], // Allowed headers
