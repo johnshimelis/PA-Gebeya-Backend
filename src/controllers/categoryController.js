@@ -1,19 +1,13 @@
-const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const Category = require("../models/Category");
-
-const router = express.Router();
 
 // Ensure 'uploads' directory exists at project root
 const uploadDir = path.join(__dirname, "../../uploads/");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-// Serve static files (images)
-router.use("/uploads", express.static(uploadDir));
 
 // Configure Multer storage
 const storage = multer.diskStorage({
@@ -36,7 +30,7 @@ const upload = multer({
 });
 
 // ✅ Create a new category (with image upload)
-router.post("/categories", upload.single("image"), async (req, res) => {
+const createCategory = async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Category name is required" });
@@ -49,10 +43,10 @@ router.post("/categories", upload.single("image"), async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
 // ✅ Get all categories
-router.get("/categories", async (req, res) => {
+const getCategories = async (req, res) => {
   try {
     const categories = await Category.find();
     const categoriesWithImageUrl = categories.map((category) => ({
@@ -63,10 +57,10 @@ router.get("/categories", async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
 // ✅ Get a single category by ID
-router.get("/categories/:id", async (req, res) => {
+const getCategoryById = async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: "Category not found" });
@@ -76,10 +70,10 @@ router.get("/categories/:id", async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
 // ✅ Update a category (with image update)
-router.put("/categories/:id", upload.single("image"), async (req, res) => {
+const updateCategory = async (req, res) => {
   try {
     const { name } = req.body;
     const updateData = { name };
@@ -95,10 +89,10 @@ router.put("/categories/:id", upload.single("image"), async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
 // ✅ Delete a category (including image deletion)
-router.delete("/categories/:id", async (req, res) => {
+const deleteCategory = async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: "Category not found" });
@@ -115,6 +109,13 @@ router.delete("/categories/:id", async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
-module.exports = router;
+module.exports = {
+  createCategory,
+  getCategories,
+  getCategoryById,
+  updateCategory,
+  deleteCategory,
+  upload, // Exporting the upload middleware
+};
