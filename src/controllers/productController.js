@@ -2,7 +2,9 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const multer = require('multer');
-
+const mongoose = require('mongoose');
+const Product = require("../models/Product");
+const Category = require("../models/Category");
 
 // Set up multer for image uploads
 const storage = multer.diskStorage({
@@ -21,25 +23,21 @@ const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif',
 const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
 const fileFilter = (req, file, cb) => {
-const ext = path.extname(file.originalname).toLowerCase();
+  const ext = path.extname(file.originalname).toLowerCase();
 
-if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
-cb(null, true);
-} else {
-cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
-}
+  if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
+  }
 };
-
 
 const upload = multer({ storage, fileFilter });
 
 // Serve static files (images) from the 'uploads' directory
-
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-const Product = require("../models/Product");
-const Category = require("../models/Category");
 
-
+// Create a new product
 exports.createProduct = async (req, res) => {
   console.log("📝 Raw Request Body:", req.body);
   console.log("📸 Uploaded File:", req.file);
@@ -166,8 +164,6 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
-
-
 // Get top 5 best-selling products
 exports.getBestSellers = async (req, res) => {
   try {
@@ -180,6 +176,8 @@ exports.getBestSellers = async (req, res) => {
       rank: index + 1, // Assign rank from 1 to 5
       _id: product._id,
       name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       sold: product.sold,
@@ -206,6 +204,8 @@ exports.getNonDiscountedProducts = async (req, res) => {
     const productsWithImageUrl = nonDiscountedProducts.map((product) => ({
       _id: product._id,
       name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       hasDiscount: product.hasDiscount,
@@ -221,15 +221,15 @@ exports.getNonDiscountedProducts = async (req, res) => {
   }
 };
 
-
-
-
+// Get all products
 exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     // Add the base URL for the image
     const productsWithImageUrl = products.map(product => ({
       ...product.toObject(),
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       photo: product.image ? `${req.protocol}://${req.get("host")}/uploads/${product.image}` : null,
     }));
     res.json(productsWithImageUrl);
@@ -238,6 +238,7 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
+// Get product by ID
 exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
@@ -250,6 +251,7 @@ exports.getProductById = async (req, res) => {
   }
 };
 
+// Get discounted products
 exports.getDiscountedProducts = async (req, res) => {
   try {
     const discountedProducts = await Product.find({
@@ -260,6 +262,8 @@ exports.getDiscountedProducts = async (req, res) => {
     const productsWithImageUrl = discountedProducts.map((product) => ({
       _id: product._id,
       name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       discount: product.discount,
@@ -277,8 +281,7 @@ exports.getDiscountedProducts = async (req, res) => {
   }
 };
 
-
-
+// Delete product
 exports.deleteProduct = async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);
@@ -289,8 +292,7 @@ exports.deleteProduct = async (req, res) => {
   }
 };
 
-const mongoose = require("mongoose");
-
+// Get products by category
 exports.getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
@@ -313,6 +315,8 @@ exports.getProductsByCategory = async (req, res) => {
     const productsWithImageUrl = products.map((product) => ({
       _id: product._id,
       name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       discount: product.discount,
