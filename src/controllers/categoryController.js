@@ -52,7 +52,7 @@ const upload = multer({ storage, fileFilter });
 router.use("/uploads", express.static(UPLOADS_DIR));
 
 // Create a new category
-router.post("/categories", upload.single("image"), async (req, res) => {
+const createCategory = async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) {
@@ -71,7 +71,7 @@ router.post("/categories", upload.single("image"), async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
-});
+};
 
 // ✅ Get all categories
 const getCategories = async (req, res) => {
