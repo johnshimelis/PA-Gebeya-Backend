@@ -120,4 +120,8 @@ module.exports = {
   updateCategory,
   deleteCategory,
   upload,
+<<<<<<< HEAD
 };
+=======
+};
+>>>>>>> 836571f (Last Update)

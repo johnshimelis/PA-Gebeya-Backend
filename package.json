@@ -13,6 +13,7 @@
   "type": "commonjs",
   "description": "",
   "dependencies": {
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.8.3",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -23,6 +24,7 @@
     "mongoose-sequence": "^6.0.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "multer-s3": "^3.0.1",
     "nodemailer": "^6.10.0",
     "socket.io-client": "^4.8.1"
   },
