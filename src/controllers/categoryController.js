@@ -1,20 +1,21 @@
-const AWS = require("aws-sdk");
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
 
-
-// Configure AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// Configure AWS S3 (SDK v3)
+const s3 = new S3Client({
   region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
 });
 
-// Multer configuration for S3
+// Multer configuration for S3 (SDK v3)
 const upload = multer({
   storage: multerS3({
-    s3,
+    s3: s3,
     bucket: process.env.AWS_BUCKET_NAME,
     acl: "public-read", // Make files publicly accessible
     metadata: (req, file, cb) => {
@@ -83,7 +84,10 @@ const updateCategory = async (req, res) => {
       // Delete the old image from S3 if it exists
       const oldCategory = await Category.findById(req.params.id);
       if (oldCategory.image) {
-        await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: oldCategory.image }).promise();
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.AWS_BUCKET_NAME,
+          Key: oldCategory.image
+        }));
       }
       updateData.image = req.file.key;
     }
@@ -105,7 +109,10 @@ const deleteCategory = async (req, res) => {
 
     if (category.image) {
       // Delete the image from S3
-      await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: category.image }).promise();
+      await s3.send(new DeleteObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: category.image
+      }));
     }
 
     await category.deleteOne();
