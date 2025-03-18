@@ -17,7 +17,6 @@ const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read", // Make files publicly accessible
     metadata: (req, file, cb) => {
       cb(null, { fieldName: file.fieldname });
     },
@@ -31,6 +30,7 @@ const upload = multer({
     file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
   },
 });
+
 
 // Helper function to get full image URL
 const getImageUrl = (imageName) =>
