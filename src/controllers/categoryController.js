@@ -2,7 +2,7 @@ const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS 
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
-const Category = require("../models/category"); // Import the Category model
+const Category = require("../models/Category"); // Import the Category model
 
 // Configure AWS S3 (SDK v3)
 const s3 = new S3Client({
