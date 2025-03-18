@@ -9,8 +9,12 @@ const app = express();
 // Allowed origins
 const allowedOrigins = [
   "https://sprightly-sawine-43e5c3.netlify.app",
-  "https://chimerical-lebkuchen-58351a.netlify.app"
+  "https://chimerical-lebkuchen-58351a.netlify.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002"
 ];
+
 
 // Middleware
 app.use(express.json());
