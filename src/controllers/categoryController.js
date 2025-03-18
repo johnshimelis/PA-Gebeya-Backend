@@ -90,7 +90,7 @@ const getCategoryIdByName = async (req, res) => {
     if (!name) return res.status(400).json({ error: "Category name is required" });
 
     const category = await Category.findOne({ name });
-    if (!category) return res.status(404).json({ message: "Category not found" });
+    if (!category) return res.status(404).json();
 
     res.status(200).json({ categoryId: category._id });
   } catch (error) {
