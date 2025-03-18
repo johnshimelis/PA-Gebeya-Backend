@@ -83,6 +83,22 @@ const getCategoryById = async (req, res) => {
   }
 };
 
+// Get category ID by name
+const getCategoryIdByName = async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!name) return res.status(400).json({ error: "Category name is required" });
+
+    const category = await Category.findOne({ name });
+    if (!category) return res.status(404).json({ message: "Category not found" });
+
+    res.status(200).json({ categoryId: category._id });
+  } catch (error) {
+    console.error("Error fetching category ID by name:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 // Update a category
 const updateCategory = async (req, res) => {
   try {
@@ -135,6 +151,7 @@ module.exports = {
   createCategory,
   getCategories,
   getCategoryById,
+  getCategoryIdByName, // Export the new function
   updateCategory,
   deleteCategory,
   upload,
