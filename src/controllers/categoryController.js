@@ -1,6 +1,4 @@
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const multer = require("multer");
-
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
