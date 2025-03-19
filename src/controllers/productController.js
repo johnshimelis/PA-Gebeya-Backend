@@ -106,7 +106,6 @@ exports.createProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 // Update product with sold count and adjust stock
 exports.updateProduct = async (req, res) => {
   try {
