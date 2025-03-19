@@ -1,63 +1,44 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
-const multer = require("multer");
-const multerS3 = require("multer-s3");
-const path = require("path");
+const express = require('express');
+const path = require('path');
+const app = express();
+const multer = require('multer');
+const mongoose = require('mongoose');
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
-// Configure AWS S3 (SDK v3)
-const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// Set up multer for image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, 'uploads'));
   },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
 });
 
-// Multer configuration for S3 (SDK v3)
-const upload = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read", // Make files publicly accessible
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase();
-      const fileName = `${Date.now()}${ext}`;
-      cb(null, fileName);
-    },
-  }),
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/bmp",
-      "image/tiff",
-      "image/svg+xml",
-      "image/avif",
-      "application/octet-stream", // For AVIF fallback
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".avif"];
+const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
+  'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
+  'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
 
-    if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
-    }
-  },
-});
+const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
-// Helper function to get full image URL
-const getImageUrl = (imageName) =>
-  imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
+const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
+  }
+};
+
+const upload = multer({ storage, fileFilter });
+
+// Serve static files (images) from the 'uploads' directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create a new product
-const createProduct = async (req, res) => {
+exports.createProduct = async (req, res) => {
   console.log("📝 Raw Request Body:", req.body);
   console.log("📸 Uploaded File:", req.file);
 
@@ -92,7 +73,7 @@ const createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      image: req.file ? req.file.key : null, // Store S3 key instead of local filename
+      image: req.file ? req.file.filename : null,
       discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
       hasDiscount: hasDiscount === "true", // Convert to boolean
     });
@@ -105,7 +86,7 @@ const createProduct = async (req, res) => {
 };
 
 // Update product with sold count and adjust stock
-const updateProduct = async (req, res) => {
+exports.updateProduct = async (req, res) => {
   try {
     const {
       name,
@@ -169,14 +150,7 @@ const updateProduct = async (req, res) => {
 
     // Handle image upload
     if (req.file) {
-      // Delete the old image from S3 if it exists
-      if (product.image) {
-        await s3.send(new DeleteObjectCommand({
-          Bucket: process.env.AWS_BUCKET_NAME,
-          Key: product.image,
-        }));
-      }
-      updateData.image = req.file.key; // Store new S3 key
+      updateData.image = req.file.filename;
     }
 
     // Update product
@@ -191,7 +165,7 @@ const updateProduct = async (req, res) => {
 };
 
 // Get top 5 best-selling products
-const getBestSellers = async (req, res) => {
+exports.getBestSellers = async (req, res) => {
   try {
     const bestSellers = await Product.find()
       .sort({ sold: -1 }) // Sort by highest sold first
@@ -208,7 +182,9 @@ const getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image
+        ? `${req.protocol}://${req.get("host")}/uploads/${product.image}`
+        : null,
     }));
 
     res.json(productsWithRanking);
@@ -218,7 +194,7 @@ const getBestSellers = async (req, res) => {
 };
 
 // Get products with no discount
-const getNonDiscountedProducts = async (req, res) => {
+exports.getNonDiscountedProducts = async (req, res) => {
   try {
     const nonDiscountedProducts = await Product.find({
       hasDiscount: false,
@@ -234,7 +210,9 @@ const getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image
+        ? `${req.protocol}://${req.get("host")}/uploads/${product.image}`
+        : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -244,7 +222,7 @@ const getNonDiscountedProducts = async (req, res) => {
 };
 
 // Get all products
-const getAllProducts = async (req, res) => {
+exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     // Add the base URL for the image
@@ -252,7 +230,7 @@ const getAllProducts = async (req, res) => {
       ...product.toObject(),
       shortDescription: product.shortDescription, // Include shortDescription
       fullDescription: product.fullDescription, // Include fullDescription
-      photo: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      photo: product.image ? `${req.protocol}://${req.get("host")}/uploads/${product.image}` : null,
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -261,12 +239,12 @@ const getAllProducts = async (req, res) => {
 };
 
 // Get product by ID
-const getProductById = async (req, res) => {
+exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
     // Add the base URL for the image
-    product.image = product.image ? getImageUrl(product.image) : null; // Use S3 URL
+    product.image = product.image ? `${req.protocol}://${req.get("host")}/uploads/${product.image}` : null;
     res.json(product);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -274,7 +252,7 @@ const getProductById = async (req, res) => {
 };
 
 // Get discounted products
-const getDiscountedProducts = async (req, res) => {
+exports.getDiscountedProducts = async (req, res) => {
   try {
     const discountedProducts = await Product.find({
       hasDiscount: true,
@@ -292,7 +270,9 @@ const getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image
+        ? `${req.protocol}://${req.get("host")}/uploads/${product.image}`
+        : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -302,20 +282,10 @@ const getDiscountedProducts = async (req, res) => {
 };
 
 // Delete product
-const deleteProduct = async (req, res) => {
+exports.deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-
-    // Delete the image from S3 if it exists
-    if (product.image) {
-      await s3.send(new DeleteObjectCommand({
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: product.image,
-      }));
-    }
-
-    await product.deleteOne();
+    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
+    if (!deletedProduct) return res.status(404).json({ message: "Product not found" });
     res.json({ message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -323,7 +293,7 @@ const deleteProduct = async (req, res) => {
 };
 
 // Get products by category
-const getProductsByCategory = async (req, res) => {
+exports.getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
 
@@ -351,7 +321,9 @@ const getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image
+        ? `${req.protocol}://${req.get("host")}/uploads/${product.image}`
+        : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -359,18 +331,4 @@ const getProductsByCategory = async (req, res) => {
     console.error("Error fetching products by category:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
-};
-
-// Export all functions and middleware
-module.exports = {
-  createProduct,
-  updateProduct,
-  getBestSellers,
-  getNonDiscountedProducts,
-  getAllProducts,
-  getProductById,
-  getDiscountedProducts,
-  deleteProduct,
-  getProductsByCategory,
-  upload, // Export the upload middleware
 };
