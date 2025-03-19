@@ -1,7 +1,10 @@
+const express = require('express');
+const path = require('path');
+const app = express();
+const multer = require('multer');
+const mongoose = require('mongoose');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const multer = require("multer");
-const multerS3 = require("multer-s3");
-const path = require("path");
+const multerS3 = require('multer-s3');
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
@@ -58,6 +61,9 @@ const getImageUrl = (imageName) =>
 
 // Create a new product
 exports.createProduct = async (req, res) => {
+  console.log("📝 Raw Request Body:", req.body);
+  console.log("📸 Uploaded File:", req.file);
+
   try {
     const {
       name,
@@ -90,8 +96,8 @@ exports.createProduct = async (req, res) => {
       stockQuantity,
       category,
       image: req.file ? req.file.key : null, // Store S3 key instead of local filename
-      discount: hasDiscount === "true" ? discount : 0,
-      hasDiscount: hasDiscount === "true",
+      discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
+      hasDiscount: hasDiscount === "true", // Convert to boolean
     });
 
     await newProduct.save();
@@ -113,7 +119,7 @@ exports.updateProduct = async (req, res) => {
       category,
       discount,
       hasDiscount,
-      sold,
+      sold, // User-provided sold count
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -128,7 +134,7 @@ exports.updateProduct = async (req, res) => {
     if (discount !== undefined) updateData.discount = hasDiscount === "true" ? discount : 0;
     if (hasDiscount !== undefined) updateData.hasDiscount = hasDiscount === "true";
 
-    // Handle sold count and stock quantity
+    // ✅ Check if sold increased
     if (sold !== undefined) {
       const newSold = Number(sold);
       if (newSold < product.sold) {
@@ -137,6 +143,7 @@ exports.updateProduct = async (req, res) => {
 
       const increaseInSold = newSold - product.sold;
       if (increaseInSold > 0) {
+        // ✅ Reduce stockQuantity accordingly
         const newStockQuantity = product.stockQuantity - increaseInSold;
         if (newStockQuantity < 0) {
           return res.status(400).json({ message: "Not enough stock available" });
@@ -147,15 +154,20 @@ exports.updateProduct = async (req, res) => {
       updateData.sold = newSold;
     }
 
+    // ✅ Allow stockQuantity to be updated only if provided
     if (stockQuantity !== undefined) {
       updateData.stockQuantity = Number(stockQuantity);
     }
 
     // Validate and update category
     if (category) {
-      const existingCategory = await Category.findById(category);
-      if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
-      updateData.category = category;
+      try {
+        const existingCategory = await Category.findById(category);
+        if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
+        updateData.category = category;
+      } catch (error) {
+        return res.status(400).json({ message: "Invalid category format" });
+      }
     }
 
     // Handle image upload
@@ -181,15 +193,69 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
+// Get top 5 best-selling products
+exports.getBestSellers = async (req, res) => {
+  try {
+    const bestSellers = await Product.find()
+      .sort({ sold: -1 }) // Sort by highest sold first
+      .limit(5)
+      .populate("category", "name");
+
+    const productsWithRanking = bestSellers.map((product, index) => ({
+      rank: index + 1, // Assign rank from 1 to 5
+      _id: product._id,
+      name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      sold: product.sold,
+      stockQuantity: product.stockQuantity,
+      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+    }));
+
+    res.json(productsWithRanking);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Get products with no discount
+exports.getNonDiscountedProducts = async (req, res) => {
+  try {
+    const nonDiscountedProducts = await Product.find({
+      hasDiscount: false,
+      discount: 0,
+    }).populate("category", "name");
+
+    const productsWithImageUrl = nonDiscountedProducts.map((product) => ({
+      _id: product._id,
+      name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      hasDiscount: product.hasDiscount,
+      discount: product.discount,
+      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+    }));
+
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 // Get all products
 exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
-    const productsWithImageUrl = products.map((product) => ({
+    // Add the base URL for the image
+    const productsWithImageUrl = products.map(product => ({
       ...product.toObject(),
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      image: getImageUrl(product.image), // Use S3 URL
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      photo: product.image ? getImageUrl(product.image) : null, // Use S3 URL
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -197,12 +263,103 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
-// Other controller methods (getProductById, getDiscountedProducts, etc.) remain the same,
-// but replace the local image URL construction with `getImageUrl(product.image)`.
+// Get product by ID
+exports.getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id).populate("category", "name");
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    // Add the base URL for the image
+    product.image = product.image ? getImageUrl(product.image) : null; // Use S3 URL
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
-module.exports = {
-  createProduct,
-  updateProduct,
-  getAllProducts,
-  upload, // Export the upload middleware for use in routes
+// Get discounted products
+exports.getDiscountedProducts = async (req, res) => {
+  try {
+    const discountedProducts = await Product.find({
+      hasDiscount: true,
+      discount: { $gt: 0 },
+    }).populate("category", "name");
+
+    const productsWithImageUrl = discountedProducts.map((product) => ({
+      _id: product._id,
+      name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      discount: product.discount,
+      originalPrice: product.price,
+      calculatedPrice: product.price - (product.price * product.discount) / 100,
+      hasDiscount: product.hasDiscount,
+      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+    }));
+
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Delete product
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Delete the image from S3 if it exists
+    if (product.image) {
+      await s3.send(new DeleteObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: product.image,
+      }));
+    }
+
+    await product.deleteOne();
+    res.json({ message: "Product deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Get products by category
+exports.getProductsByCategory = async (req, res) => {
+  try {
+    const categoryId = req.params.categoryId;
+
+    // Validate category ID
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
+
+    // Check if the category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    // Fetch products by category
+    const products = await Product.find({ category: categoryId }).populate("category", "name");
+
+    // Add the base URL for the image
+    const productsWithImageUrl = products.map((product) => ({
+      _id: product._id,
+      name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      discount: product.discount,
+      hasDiscount: product.hasDiscount,
+      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+    }));
+
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    console.error("Error fetching products by category:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 };
