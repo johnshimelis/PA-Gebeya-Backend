@@ -91,7 +91,17 @@ exports.createProduct = async (req, res) => {
     });
 
     await newProduct.save();
-    res.status(201).json({ ...newProduct.toObject(), photo: getImageUrl(newProduct.image) });
+
+    // Populate the category field
+    const populatedProduct = await Product.findById(newProduct._id).populate("category", "name");
+
+    // Include the full image URL in the response
+    const responseProduct = {
+      ...populatedProduct.toObject(),
+      photo: populatedProduct.image ? getImageUrl(populatedProduct.image) : null,
+    };
+
+    res.status(201).json(responseProduct);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -173,11 +183,17 @@ exports.updateProduct = async (req, res) => {
     }
 
     // Update product
-    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate("category", "name");
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
-    res.json({ message: "Product updated successfully", product: { ...updatedProduct.toObject(), photo: getImageUrl(updatedProduct.image) } });
+    // Include the full image URL in the response
+    const responseProduct = {
+      ...updatedProduct.toObject(),
+      photo: updatedProduct.image ? getImageUrl(updatedProduct.image) : null,
+    };
+
+    res.json({ message: "Product updated successfully", product: responseProduct });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -201,7 +217,8 @@ exports.getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithRanking);
@@ -227,7 +244,8 @@ exports.getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithImageUrl);
@@ -245,7 +263,8 @@ exports.getAllProducts = async (req, res) => {
       ...product.toObject(),
       shortDescription: product.shortDescription, // Include shortDescription
       fullDescription: product.fullDescription, // Include fullDescription
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -261,7 +280,8 @@ exports.getProductById = async (req, res) => {
     // Add the base URL for the image
     const responseProduct = {
       ...product.toObject(),
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     };
     res.json(responseProduct);
   } catch (error) {
@@ -288,7 +308,8 @@ exports.getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithImageUrl);
@@ -347,7 +368,8 @@ exports.getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      photo: product.image ? getImageUrl(product.image) : null,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithImageUrl);
