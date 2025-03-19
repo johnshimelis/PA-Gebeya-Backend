@@ -77,6 +77,12 @@ const createProduct = async (req, res) => {
     if (!name || name.trim() === "") {
       return res.status(400).json({ message: "Name is required" });
     }
+    if (!price || isNaN(price)) {
+      return res.status(400).json({ message: "Price must be a number" });
+    }
+    if (!category || !mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
 
     // Check if the category exists
     const existingCategory = await Category.findById(category);
@@ -87,19 +93,20 @@ const createProduct = async (req, res) => {
     // Create a new product with optional discount
     const newProduct = new Product({
       name: name.trim(),
-      price,
+      price: parseFloat(price), // Ensure price is a number
       shortDescription,
       fullDescription,
-      stockQuantity,
+      stockQuantity: parseInt(stockQuantity, 10), // Ensure stockQuantity is a number
       category,
       image: req.file ? req.file.key : null, // Store S3 key instead of local filename
-      discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
+      discount: hasDiscount === "true" ? parseFloat(discount) : 0, // Only apply discount if `hasDiscount` is true
       hasDiscount: hasDiscount === "true", // Convert to boolean
     });
 
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error) {
+    console.error("Error creating product:", error); // Log the error
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
