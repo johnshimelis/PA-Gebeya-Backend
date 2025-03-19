@@ -1,7 +1,8 @@
 const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const multer = require("multer");
 const multerS3 = require("multer-s3");
 const path = require("path");
+const multer = require("multer");
+const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
@@ -19,7 +20,6 @@ const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read", // Make files publicly accessible
     metadata: (req, file, cb) => {
       cb(null, { fieldName: file.fieldname });
     },
@@ -30,7 +30,17 @@ const upload = multer({
     },
   }),
   fileFilter: (req, file, cb) => {
-    file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
+      'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
+      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
+
+    if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
+    }
   },
 });
 
@@ -39,7 +49,7 @@ const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
 // Create a new product
-const createProduct = async (req, res) => {
+exports.createProduct = async (req, res) => {
   console.log("📝 Raw Request Body:", req.body);
   console.log("📸 Uploaded File:", req.file);
 
@@ -66,13 +76,6 @@ const createProduct = async (req, res) => {
       return res.status(400).json({ message: "Invalid category ID" });
     }
 
-    // Log the file details
-    if (req.file) {
-      console.log("File uploaded successfully:", req.file);
-    } else {
-      console.log("No file uploaded.");
-    }
-
     // Create a new product with optional discount
     const newProduct = new Product({
       name: name.trim(),
@@ -81,7 +84,7 @@ const createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      image: req.file ? req.file.key : null, // Store S3 key instead of local filename
+      image: req.file ? req.file.key : null,
       discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
       hasDiscount: hasDiscount === "true", // Convert to boolean
     });
@@ -89,13 +92,12 @@ const createProduct = async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error) {
-    console.error("Error creating product:", error); // Log the error
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
 // Update product with sold count and adjust stock
-const updateProduct = async (req, res) => {
+exports.updateProduct = async (req, res) => {
   try {
     const {
       name,
@@ -166,7 +168,7 @@ const updateProduct = async (req, res) => {
           Key: product.image,
         }));
       }
-      updateData.image = req.file.key; // Store new S3 key
+      updateData.image = req.file.key;
     }
 
     // Update product
@@ -181,7 +183,7 @@ const updateProduct = async (req, res) => {
 };
 
 // Get top 5 best-selling products
-const getBestSellers = async (req, res) => {
+exports.getBestSellers = async (req, res) => {
   try {
     const bestSellers = await Product.find()
       .sort({ sold: -1 }) // Sort by highest sold first
@@ -198,7 +200,7 @@ const getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithRanking);
@@ -208,7 +210,7 @@ const getBestSellers = async (req, res) => {
 };
 
 // Get products with no discount
-const getNonDiscountedProducts = async (req, res) => {
+exports.getNonDiscountedProducts = async (req, res) => {
   try {
     const nonDiscountedProducts = await Product.find({
       hasDiscount: false,
@@ -224,7 +226,7 @@ const getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -234,7 +236,7 @@ const getNonDiscountedProducts = async (req, res) => {
 };
 
 // Get all products
-const getAllProducts = async (req, res) => {
+exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     // Add the base URL for the image
@@ -242,7 +244,7 @@ const getAllProducts = async (req, res) => {
       ...product.toObject(),
       shortDescription: product.shortDescription, // Include shortDescription
       fullDescription: product.fullDescription, // Include fullDescription
-      photo: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      photo: product.image ? getImageUrl(product.image) : null,
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -251,12 +253,12 @@ const getAllProducts = async (req, res) => {
 };
 
 // Get product by ID
-const getProductById = async (req, res) => {
+exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
     // Add the base URL for the image
-    product.image = product.image ? getImageUrl(product.image) : null; // Use S3 URL
+    product.image = product.image ? getImageUrl(product.image) : null;
     res.json(product);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -264,7 +266,7 @@ const getProductById = async (req, res) => {
 };
 
 // Get discounted products
-const getDiscountedProducts = async (req, res) => {
+exports.getDiscountedProducts = async (req, res) => {
   try {
     const discountedProducts = await Product.find({
       hasDiscount: true,
@@ -282,7 +284,7 @@ const getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -292,7 +294,7 @@ const getDiscountedProducts = async (req, res) => {
 };
 
 // Delete product
-const deleteProduct = async (req, res) => {
+exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
@@ -313,7 +315,7 @@ const deleteProduct = async (req, res) => {
 };
 
 // Get products by category
-const getProductsByCategory = async (req, res) => {
+exports.getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
 
@@ -341,7 +343,7 @@ const getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null, // Use S3 URL
+      image: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -349,18 +351,4 @@ const getProductsByCategory = async (req, res) => {
     console.error("Error fetching products by category:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
-};
-
-// Export all functions and middleware
-module.exports = {
-  createProduct,
-  updateProduct,
-  getBestSellers,
-  getNonDiscountedProducts,
-  getAllProducts,
-  getProductById,
-  getDiscountedProducts,
-  deleteProduct,
-  getProductsByCategory,
-  upload, // Export the upload middleware
 };
