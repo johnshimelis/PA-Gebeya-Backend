@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
+const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
 const multer = require("multer");
 const multerS3 = require("multer-s3");
 const path = require("path");
@@ -24,31 +24,13 @@ const upload = multer({
       cb(null, { fieldName: file.fieldname });
     },
     key: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase();
+      const ext = path.extname(file.originalname);
       const fileName = `${Date.now()}${ext}`;
       cb(null, fileName);
     },
   }),
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/bmp",
-      "image/tiff",
-      "image/svg+xml",
-      "image/avif",
-      "application/octet-stream", // For AVIF fallback
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".avif"];
-
-    if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
-    }
+    file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
   },
 });
 
@@ -84,6 +66,13 @@ const createProduct = async (req, res) => {
       return res.status(400).json({ message: "Invalid category ID" });
     }
 
+    // Log the file details
+    if (req.file) {
+      console.log("File uploaded successfully:", req.file);
+    } else {
+      console.log("No file uploaded.");
+    }
+
     // Create a new product with optional discount
     const newProduct = new Product({
       name: name.trim(),
@@ -100,6 +89,7 @@ const createProduct = async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error) {
+    console.error("Error creating product:", error); // Log the error
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
