@@ -30,11 +30,12 @@ const upload = multer({
     },
   }),
   fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
       'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
       'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
+
+    const ext = path.extname(file.originalname).toLowerCase();
 
     if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
       cb(null, true);
@@ -84,13 +85,13 @@ exports.createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      image: req.file ? req.file.key : null,
+      image: req.file ? req.file.key : null, // Store the S3 key
       discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
       hasDiscount: hasDiscount === "true", // Convert to boolean
     });
 
     await newProduct.save();
-    res.status(201).json(newProduct);
+    res.status(201).json({ ...newProduct.toObject(), photo: getImageUrl(newProduct.image) });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -176,7 +177,7 @@ exports.updateProduct = async (req, res) => {
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
-    res.json({ message: "Product updated successfully", product: updatedProduct });
+    res.json({ message: "Product updated successfully", product: { ...updatedProduct.toObject(), photo: getImageUrl(updatedProduct.image) } });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -200,7 +201,7 @@ exports.getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      image: product.image ? getImageUrl(product.image) : null,
+      photo: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithRanking);
@@ -226,7 +227,7 @@ exports.getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      image: product.image ? getImageUrl(product.image) : null,
+      photo: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -258,8 +259,11 @@ exports.getProductById = async (req, res) => {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
     // Add the base URL for the image
-    product.image = product.image ? getImageUrl(product.image) : null;
-    res.json(product);
+    const responseProduct = {
+      ...product.toObject(),
+      photo: product.image ? getImageUrl(product.image) : null,
+    };
+    res.json(responseProduct);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -284,7 +288,7 @@ exports.getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null,
+      photo: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
@@ -343,7 +347,7 @@ exports.getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      image: product.image ? getImageUrl(product.image) : null,
+      photo: product.image ? getImageUrl(product.image) : null,
     }));
 
     res.json(productsWithImageUrl);
