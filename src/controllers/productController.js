@@ -1,10 +1,7 @@
-const express = require('express');
-const path = require('path');
-const app = express();
-const multer = require('multer');
-const mongoose = require('mongoose');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const multerS3 = require('multer-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const multer = require("multer");
+const multerS3 = require("multer-s3");
+const path = require("path");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
@@ -60,7 +57,7 @@ const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
 // Create a new product
-exports.createProduct = async (req, res) => {
+const createProduct = async (req, res) => {
   console.log("📝 Raw Request Body:", req.body);
   console.log("📸 Uploaded File:", req.file);
 
@@ -108,7 +105,7 @@ exports.createProduct = async (req, res) => {
 };
 
 // Update product with sold count and adjust stock
-exports.updateProduct = async (req, res) => {
+const updateProduct = async (req, res) => {
   try {
     const {
       name,
@@ -194,7 +191,7 @@ exports.updateProduct = async (req, res) => {
 };
 
 // Get top 5 best-selling products
-exports.getBestSellers = async (req, res) => {
+const getBestSellers = async (req, res) => {
   try {
     const bestSellers = await Product.find()
       .sort({ sold: -1 }) // Sort by highest sold first
@@ -221,7 +218,7 @@ exports.getBestSellers = async (req, res) => {
 };
 
 // Get products with no discount
-exports.getNonDiscountedProducts = async (req, res) => {
+const getNonDiscountedProducts = async (req, res) => {
   try {
     const nonDiscountedProducts = await Product.find({
       hasDiscount: false,
@@ -247,7 +244,7 @@ exports.getNonDiscountedProducts = async (req, res) => {
 };
 
 // Get all products
-exports.getAllProducts = async (req, res) => {
+const getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     // Add the base URL for the image
@@ -264,7 +261,7 @@ exports.getAllProducts = async (req, res) => {
 };
 
 // Get product by ID
-exports.getProductById = async (req, res) => {
+const getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
@@ -277,7 +274,7 @@ exports.getProductById = async (req, res) => {
 };
 
 // Get discounted products
-exports.getDiscountedProducts = async (req, res) => {
+const getDiscountedProducts = async (req, res) => {
   try {
     const discountedProducts = await Product.find({
       hasDiscount: true,
@@ -305,7 +302,7 @@ exports.getDiscountedProducts = async (req, res) => {
 };
 
 // Delete product
-exports.deleteProduct = async (req, res) => {
+const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
@@ -326,7 +323,7 @@ exports.deleteProduct = async (req, res) => {
 };
 
 // Get products by category
-exports.getProductsByCategory = async (req, res) => {
+const getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
 
@@ -362,4 +359,18 @@ exports.getProductsByCategory = async (req, res) => {
     console.error("Error fetching products by category:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
+};
+
+// Export all functions and middleware
+module.exports = {
+  createProduct,
+  updateProduct,
+  getBestSellers,
+  getNonDiscountedProducts,
+  getAllProducts,
+  getProductById,
+  getDiscountedProducts,
+  deleteProduct,
+  getProductsByCategory,
+  upload, // Export the upload middleware
 };
