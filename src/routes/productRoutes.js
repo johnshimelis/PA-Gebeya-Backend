@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const productController = require("../controllers/productController");
 const { upload } = productController; // Import the upload middleware
+const multer = require("multer"); // Import multer
 
 // Routes
 router.post("/", upload.single("image"), productController.createProduct);
