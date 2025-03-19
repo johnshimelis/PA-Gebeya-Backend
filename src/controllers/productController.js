@@ -178,11 +178,11 @@ exports.updateProduct = async (req, res) => {
           Key: product.image,
         }));
       }
-      updateData.image = req.file.key;
+      updateData.image = req.file.key; // Store the S3 key
     }
 
     // Update product
-    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate("category", "name");
+    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
