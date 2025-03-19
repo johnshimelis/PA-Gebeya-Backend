@@ -178,7 +178,7 @@ exports.updateProduct = async (req, res) => {
           Key: product.image,
         }));
       }
-      updateData.image = req.file.key; // Store the S3 key
+      updateData.image = req.file.key; // Store the S3 key instead of req.file.filename
     }
 
     // Update product
@@ -186,13 +186,7 @@ exports.updateProduct = async (req, res) => {
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
-    // Include the full image URL in the response
-    const responseProduct = {
-      ...updatedProduct.toObject(),
-      photo: updatedProduct.image ? getImageUrl(updatedProduct.image) : null,
-    };
-
-    res.json({ message: "Product updated successfully", product: responseProduct });
+    res.json({ message: "Product updated successfully", product: updatedProduct });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
