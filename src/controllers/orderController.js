@@ -27,15 +27,12 @@ const upload = multer({
       const fileName = `${Date.now()}${ext}`;
       cb(null, fileName);
     },
-    contentType: multerS3.AUTO_CONTENT_TYPE, // Ensure correct MIME type
-    acl: 'public-read', // Make files publicly accessible
+    acl: undefined, // Remove ACL configuration
   }),
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
       'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
-      'application/octet-stream', // Add 'application/octet-stream' for AVIF fallback
-    ];
+      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
     const ext = path.extname(file.originalname).toLowerCase();
