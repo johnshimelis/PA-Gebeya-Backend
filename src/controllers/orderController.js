@@ -50,6 +50,7 @@ const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
 // ✅ Create New Order
+// ✅ Create New Order
 exports.createOrder = async (req, res) => {
   try {
     const cleanedBody = {};
@@ -105,7 +106,7 @@ exports.createOrder = async (req, res) => {
               product: item.product,
               quantity: item.quantity || 1,
               price: item.price || 0,
-              productImage: productImages[index] || null, // Use S3 URL
+              productImage: productImages[index] || null, // Use S3 URL for the corresponding product image
             };
           })
         );
@@ -142,7 +143,6 @@ exports.createOrder = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 // ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
 exports.updateOrder = async (req, res) => {
   try {
