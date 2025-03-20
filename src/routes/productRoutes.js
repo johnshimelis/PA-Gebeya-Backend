@@ -7,14 +7,14 @@ const router = express.Router();
 const { upload } = productController;
 
 // Routes
-router.post("/", upload.single("image"), productController.createProduct);
+router.post("/", upload.array("images", 10), productController.createProduct); // Allow up to 10 images
 router.get("/", productController.getAllProducts);
 router.get("/discounted", productController.getDiscountedProducts);
 router.get("/bestsellers", productController.getBestSellers);
 router.get("/nondiscount", productController.getNonDiscountedProducts);
 router.get("/:id", productController.getProductById);
 router.get("/category/:categoryId", productController.getProductsByCategory);
-router.put("/:id", upload.single("image"), productController.updateProduct);
+router.put("/:id", upload.array("images", 10), productController.updateProduct); // Allow up to 10 images
 router.delete("/:id", productController.deleteProduct);
 
 // Error Handling Middleware for Multer
