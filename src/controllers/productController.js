@@ -184,7 +184,7 @@ exports.updateProduct = async (req, res) => {
           console.error("Error deleting old image from S3:", error);
         }
       }
-      updateData.image = req.file.key; // Store the S3 key
+      updateData.image = req.file.key; // Store the new S3 key
     }
 
     // Update product
@@ -192,12 +192,17 @@ exports.updateProduct = async (req, res) => {
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
-    res.json({ message: "Product updated successfully", product: updatedProduct });
+    // Include the full image URL in the response
+    const responseProduct = {
+      ...updatedProduct.toObject(),
+      photo: updatedProduct.image ? getImageUrl(updatedProduct.image) : null,
+    };
+
+    res.json({ message: "Product updated successfully", product: responseProduct });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 // Get top 5 best-selling products
 exports.getBestSellers = async (req, res) => {
   try {
