@@ -50,7 +50,6 @@ const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
 // ✅ Create New Order
-// ✅ Create New Order
 exports.createOrder = async (req, res) => {
   try {
     const cleanedBody = {};
