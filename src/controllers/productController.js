@@ -106,6 +106,7 @@ exports.createProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 // Update product with sold count and adjust stock
 exports.updateProduct = async (req, res) => {
   try {
@@ -173,12 +174,17 @@ exports.updateProduct = async (req, res) => {
     if (req.file) {
       // Delete the old image from S3 if it exists
       if (product.image) {
-        await s3.send(new DeleteObjectCommand({
-          Bucket: process.env.AWS_BUCKET_NAME,
-          Key: product.image,
-        }));
+        try {
+          await s3.send(new DeleteObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: product.image,
+          }));
+          console.log("Old image deleted from S3:", product.image);
+        } catch (error) {
+          console.error("Error deleting old image from S3:", error);
+        }
       }
-      updateData.image = req.file.key; // Store the S3 key instead of req.file.filename
+      updateData.image = req.file.key; // Store the S3 key
     }
 
     // Update product
@@ -319,10 +325,15 @@ exports.deleteProduct = async (req, res) => {
 
     // Delete the image from S3 if it exists
     if (product.image) {
-      await s3.send(new DeleteObjectCommand({
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: product.image,
-      }));
+      try {
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.AWS_BUCKET_NAME,
+          Key: product.image,
+        }));
+        console.log("Image deleted from S3:", product.image);
+      } catch (error) {
+        console.error("Error deleting image from S3:", error);
+      }
     }
 
     await product.deleteOne();
