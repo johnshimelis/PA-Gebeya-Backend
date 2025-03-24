@@ -6,14 +6,25 @@ const {
   getCategoryById,
   updateCategory,
   deleteCategory,
-  upload, // Import the upload middleware
+  upload
 } = require("../controllers/categoryController");
+const multer = require("multer");
 
 // Category Routes
-router.post("/", upload.single("image"), createCategory); // Create category with image upload
-router.get("/", getCategories); // Get all categories
-router.get("/:id", getCategoryById); // Get a single category
-router.put("/:id", upload.single("image"), updateCategory); // Update category with optional image
-router.delete("/:id", deleteCategory); // Delete category
+router.post("/", upload, createCategory);
+router.get("/", getCategories);
+router.get("/:id", getCategoryById);
+router.put("/:id", upload, updateCategory);
+router.delete("/:id", deleteCategory);
+
+// Error Handling Middleware for Multer
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: err.message });
+  } else if (err) {
+    return res.status(400).json({ message: err.message });
+  }
+  next();
+});
 
 module.exports = router;
