@@ -419,14 +419,17 @@ exports.getProductsByCategory = async (req, res) => {
 
 // At the bottom of productController.js
 module.exports = {
-  createProduct,
-  getAllProducts,
-  getProductById,
-  updateProduct,
-  deleteProduct,
-  getDiscountedProducts,
-  getBestSellers,
-  getNonDiscountedProducts,
-  getProductsByCategory,
-  upload // Make sure this is exported
+// At the bottom of productController.js, replace the current exports with:
+
+module.exports = {
+  createProduct: exports.createProduct,
+  getAllProducts: exports.getAllProducts,
+  getProductById: exports.getProductById,
+  updateProduct: exports.updateProduct,
+  deleteProduct: exports.deleteProduct,
+  getDiscountedProducts: exports.getDiscountedProducts,
+  getBestSellers: exports.getBestSellers,
+  getNonDiscountedProducts: exports.getNonDiscountedProducts,
+  getProductsByCategory: exports.getProductsByCategory,
+  upload: exports.upload
 };
