@@ -417,9 +417,6 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-// At the bottom of productController.js
-module.exports = {
-// At the bottom of productController.js, replace the current exports with:
 
 module.exports = {
   createProduct: exports.createProduct,
