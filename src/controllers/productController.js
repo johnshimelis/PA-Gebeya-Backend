@@ -50,7 +50,7 @@ const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
 // Create a new product (updated for multiple images)
-exports.createProduct = async (req, res) => {
+const createProduct = async (req, res) => {
   try {
     // First handle the file upload
     upload(req, res, async function (err) {
@@ -125,10 +125,8 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-// [Keep all your other controller methods exactly as they were]
-
 // Update product with sold count and adjust stock
-exports.updateProduct = async (req, res) => {
+const updateProduct = async (req, res) => {
   try {
     const {
       name,
@@ -158,7 +156,7 @@ exports.updateProduct = async (req, res) => {
     if (videoLink) updateData.videoLink = videoLink; // Update video link
     if (rating) updateData.rating = rating; // Update star rating
 
-    // ✅ Check if sold increased
+    // Check if sold increased
     if (sold !== undefined) {
       const newSold = Number(sold);
       if (newSold < product.sold) {
@@ -167,7 +165,7 @@ exports.updateProduct = async (req, res) => {
 
       const increaseInSold = newSold - product.sold;
       if (increaseInSold > 0) {
-        // ✅ Reduce stockQuantity accordingly
+        // Reduce stockQuantity accordingly
         const newStockQuantity = product.stockQuantity - increaseInSold;
         if (newStockQuantity < 0) {
           return res.status(400).json({ message: "Not enough stock available" });
@@ -178,7 +176,7 @@ exports.updateProduct = async (req, res) => {
       updateData.sold = newSold;
     }
 
-    // ✅ Allow stockQuantity to be updated only if provided
+    // Allow stockQuantity to be updated only if provided
     if (stockQuantity !== undefined) {
       updateData.stockQuantity = Number(stockQuantity);
     }
@@ -231,7 +229,7 @@ exports.updateProduct = async (req, res) => {
 };
 
 // Get all products
-exports.getAllProducts = async (req, res) => {
+const getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     // Add the base URL for the images
@@ -246,7 +244,7 @@ exports.getAllProducts = async (req, res) => {
 };
 
 // Get product by ID
-exports.getProductById = async (req, res) => {
+const getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
@@ -262,7 +260,7 @@ exports.getProductById = async (req, res) => {
 };
 
 // Delete product
-exports.deleteProduct = async (req, res) => {
+const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
@@ -290,7 +288,7 @@ exports.deleteProduct = async (req, res) => {
 };
 
 // Get discounted products
-exports.getDiscountedProducts = async (req, res) => {
+const getDiscountedProducts = async (req, res) => {
   try {
     const discountedProducts = await Product.find({
       hasDiscount: true,
@@ -320,7 +318,7 @@ exports.getDiscountedProducts = async (req, res) => {
 };
 
 // Get top 5 best-selling products
-exports.getBestSellers = async (req, res) => {
+const getBestSellers = async (req, res) => {
   try {
     const bestSellers = await Product.find()
       .sort({ sold: -1 }) // Sort by highest sold first
@@ -349,7 +347,7 @@ exports.getBestSellers = async (req, res) => {
 };
 
 // Get products with no discount
-exports.getNonDiscountedProducts = async (req, res) => {
+const getNonDiscountedProducts = async (req, res) => {
   try {
     const nonDiscountedProducts = await Product.find({
       hasDiscount: false,
@@ -377,7 +375,7 @@ exports.getNonDiscountedProducts = async (req, res) => {
 };
 
 // Get products by category
-exports.getProductsByCategory = async (req, res) => {
+const getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
 
@@ -417,16 +415,15 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-
 module.exports = {
-  createProduct: exports.createProduct,
-  getAllProducts: exports.getAllProducts,
-  getProductById: exports.getProductById,
-  updateProduct: exports.updateProduct,
-  deleteProduct: exports.deleteProduct,
-  getDiscountedProducts: exports.getDiscountedProducts,
-  getBestSellers: exports.getBestSellers,
-  getNonDiscountedProducts: exports.getNonDiscountedProducts,
-  getProductsByCategory: exports.getProductsByCategory,
-  upload: exports.upload
+  createProduct,
+  updateProduct,
+  getAllProducts,
+  getProductById,
+  deleteProduct,
+  getDiscountedProducts,
+  getBestSellers,
+  getNonDiscountedProducts,
+  getProductsByCategory,
+  upload
 };
