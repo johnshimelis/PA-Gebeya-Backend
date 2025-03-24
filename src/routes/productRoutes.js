@@ -7,7 +7,7 @@ const upload = productController.upload;
 
 // Routes
 router.post("/", 
-  upload, // Use the S3 upload middleware
+  upload, 
   productController.createProduct
 );
 
