@@ -13,7 +13,9 @@ const allowedOrigins = [
   "http://localhost:3000", // Add localhost:3000
   "http://localhost:3001", // Add localhost:3001
   "http://localhost:3002", // Add localhost:3001
-  "https://pgebeyaadmin.netlify.app,"
+  "https://pgebeyaadmin.netlify.app",
+  "https://pgebeya.netlify.app",
+  
 ];
 
 // Middleware
