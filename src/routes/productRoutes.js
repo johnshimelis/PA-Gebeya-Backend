@@ -1,13 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const productController = require("../controllers/productController");
-
-// Import the S3 upload middleware from the controller
-const upload = productController.upload;
+const multer = require("multer");
 
 // Routes
 router.post("/", 
-  upload, 
+  productController.upload, 
   productController.createProduct
 );
 
@@ -19,7 +17,7 @@ router.get("/:id", productController.getProductById);
 router.get("/category/:categoryId", productController.getProductsByCategory);
 
 router.put("/:id", 
-  upload, // Use the same S3 upload middleware for updates
+  productController.upload,
   productController.updateProduct
 );
 
