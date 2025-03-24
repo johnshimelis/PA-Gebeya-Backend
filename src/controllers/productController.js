@@ -403,28 +403,50 @@ const getNonDiscountedProducts = async (req, res) => {
 // Get products by category
 const getProductsByCategory = async (req, res) => {
   try {
-    const categoryId = req.params.categoryId;
+    const { categoryId } = req.params;
 
+    // 1. Validate the category ID
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({ message: "Invalid category ID" });
+      return res.status(400).json({ message: "Invalid category ID format" });
     }
 
+    // 2. Check if category exists
     const category = await Category.findById(categoryId);
     if (!category) {
       return res.status(404).json({ message: "Category not found" });
     }
 
-    const products = await Product.find({ category: categoryId }).populate("category", "name");
+    // 3. Find products in this category
+    const products = await Product.find({ category: categoryId })
+      .populate("category", "name _id");
 
+    if (products.length === 0) {
+      return res.status(200).json({
+        message: "No products found in this category",
+        products: [],
+        categoryName: category.name
+      });
+    }
+
+    // 4. Add image URLs to each product
     const productsWithUrls = products.map(product => ({
       ...product.toObject(),
-      imageUrls: (product.images || []).map(img => getImageUrl(img))
+      imageUrls: product.images.map(img => 
+        `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${img}`
+      )
     }));
 
-    res.json(productsWithUrls);
+    res.json({
+      categoryName: category.name,
+      products: productsWithUrls
+    });
+
   } catch (error) {
     console.error("Error fetching products by category:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ 
+      message: "Server error",
+      error: error.message 
+    });
   }
 };
 
