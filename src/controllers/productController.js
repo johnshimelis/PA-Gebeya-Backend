@@ -1,4 +1,4 @@
-const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
+const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
-// Configure AWS S3 (SDK v3)
+// Configure AWS S3
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -15,24 +15,24 @@ const s3 = new S3Client({
   },
 });
 
-// Multer configuration for S3 (SDK v3)
+// Updated Multer configuration for multiple files
 const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.AWS_BUCKET_NAME,
-    metadata: (req, file, cb) => {
+    metadata: function (req, file, cb) {
       cb(null, { fieldName: file.fieldname });
     },
-    key: (req, file, cb) => {
+    key: function (req, file, cb) {
       const ext = path.extname(file.originalname);
-      const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`; // Unique filename
+      const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
       cb(null, fileName);
-    },
+    }
   }),
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
       'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
-      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+      'application/octet-stream'];
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
     const ext = path.extname(file.originalname).toLowerCase();
@@ -43,73 +43,89 @@ const upload = multer({
       cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
     }
   },
-});
+}).array('images', 10); // Handle up to 10 files in the 'images' field
 
 // Helper function to get full image URL
 const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
-// Create a new product
+// Create a new product (updated for multiple images)
 exports.createProduct = async (req, res) => {
-  console.log("📝 Raw Request Body:", req.body);
-  console.log("📸 Uploaded Files:", req.files);
-
   try {
-    const {
-      name,
-      price,
-      shortDescription,
-      fullDescription,
-      stockQuantity,
-      category,
-      discount,
-      hasDiscount,
-      videoLink, // New field for video link
-      rating, // New field for star rating
-    } = req.body;
+    // First handle the file upload
+    upload(req, res, async function (err) {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ message: "File upload error", error: err.message });
+      } else if (err) {
+        return res.status(500).json({ message: "Server error", error: err.message });
+      }
 
-    // Validation for required fields
-    if (!name || name.trim() === "") {
-      return res.status(400).json({ message: "Name is required" });
-    }
+      // Now process the product creation with all fields from your screenshot
+      const {
+        name,
+        price,
+        shortDescription,
+        fullDescription,
+        stockQuantity,
+        category,
+        discount = 0, // Default to 0 if not provided
+        hasDiscount = "false", // Default to false if not provided
+        videoLink,
+        rating,
+      } = req.body;
 
-    // Check if the category exists
-    const existingCategory = await Category.findById(category);
-    if (!existingCategory) {
-      return res.status(400).json({ message: "Invalid category ID" });
-    }
+      // Validation for required fields
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ message: "Name is required" });
+      }
 
-    // Create a new product with optional discount
-    const newProduct = new Product({
-      name: name.trim(),
-      price,
-      shortDescription,
-      fullDescription,
-      stockQuantity,
-      category,
-      images: req.files ? req.files.map((file) => file.key) : [], // Store multiple S3 keys
-      discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
-      hasDiscount: hasDiscount === "true", // Convert to boolean
-      videoLink, // Add video link
-      rating: rating || 0, // Default rating to 0 if not provided
+      if (!price) {
+        return res.status(400).json({ message: "Price is required" });
+      }
+
+      if (!category) {
+        return res.status(400).json({ message: "Category is required" });
+      }
+
+      const existingCategory = await Category.findById(category);
+      if (!existingCategory) {
+        return res.status(400).json({ message: "Invalid category ID" });
+      }
+
+      // Get the uploaded files
+      const images = req.files ? req.files.map(file => file.key) : [];
+
+      const newProduct = new Product({
+        name: name.trim(),
+        price: Number(price),
+        shortDescription: shortDescription || "",
+        fullDescription: fullDescription || "",
+        stockQuantity: stockQuantity ? Number(stockQuantity) : 0,
+        category,
+        images,
+        discount: hasDiscount === "true" ? Number(discount) : 0,
+        hasDiscount: hasDiscount === "true",
+        videoLink: videoLink || "",
+        rating: rating ? Number(rating) : 0,
+      });
+
+      await newProduct.save();
+      const populatedProduct = await Product.findById(newProduct._id).populate("category", "name");
+
+      const responseProduct = {
+        ...populatedProduct.toObject(),
+        images: populatedProduct.images.map(image => getImageUrl(image)),
+      };
+
+      res.status(201).json(responseProduct);
     });
-
-    await newProduct.save();
-
-    // Populate the category field
-    const populatedProduct = await Product.findById(newProduct._id).populate("category", "name");
-
-    // Include the full image URLs in the response
-    const responseProduct = {
-      ...populatedProduct.toObject(),
-      images: (populatedProduct.images || []).map((image) => getImageUrl(image)), // Added null check here
-    };
-
-    res.status(201).json(responseProduct);
   } catch (error) {
+    console.error("Error creating product:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+// [Keep all your other controller methods exactly as they were]
 
 // Update product with sold count and adjust stock
 exports.updateProduct = async (req, res) => {
@@ -205,7 +221,7 @@ exports.updateProduct = async (req, res) => {
     // Include the full image URLs in the response
     const responseProduct = {
       ...updatedProduct.toObject(),
-      images: (updatedProduct.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: updatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     };
 
     res.json({ message: "Product updated successfully", product: responseProduct });
@@ -221,7 +237,7 @@ exports.getAllProducts = async (req, res) => {
     // Add the base URL for the images
     const productsWithImageUrl = products.map((product) => ({
       ...product.toObject(),
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -237,7 +253,7 @@ exports.getProductById = async (req, res) => {
     // Add the base URL for the images
     const responseProduct = {
       ...product.toObject(),
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     };
     res.json(responseProduct);
   } catch (error) {
@@ -292,7 +308,7 @@ exports.getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -321,7 +337,7 @@ exports.getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -349,7 +365,7 @@ exports.getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -389,7 +405,7 @@ exports.getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
