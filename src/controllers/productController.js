@@ -1,4 +1,4 @@
-const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
+const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
-// Configure AWS S3 (SDK v3)
+// Configure AWS S3
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -15,26 +15,23 @@ const s3 = new S3Client({
   },
 });
 
-// Multer configuration for S3 (SDK v3)
+// Multer configuration for S3
 const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.AWS_BUCKET_NAME,
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
+    metadata: (req, file, cb) => cb(null, { fieldName: file.fieldname }),
     key: (req, file, cb) => {
       const ext = path.extname(file.originalname);
-      const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`; // Unique filename
+      const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
       cb(null, fileName);
     },
   }),
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
       'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
-      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+      'application/octet-stream'];
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
-
     const ext = path.extname(file.originalname).toLowerCase();
 
     if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
@@ -45,41 +42,32 @@ const upload = multer({
   },
 });
 
-// Helper function to get full image URL
-const getImageUrl = (imageName) =>
-  imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
+// Helper function to safely get image URL
+const getImageUrl = (imageName) => {
+  if (!imageName) return null;
+  return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}`;
+};
+
+// Helper function to safely map images
+const mapImages = (images) => {
+  return Array.isArray(images) ? images.map(image => getImageUrl(image)) : [];
+};
 
 // Create a new product
 exports.createProduct = async (req, res) => {
-  console.log("📝 Raw Request Body:", req.body);
-  console.log("📸 Uploaded Files:", req.files);
-
   try {
-    const {
-      name,
-      price,
-      shortDescription,
-      fullDescription,
-      stockQuantity,
-      category,
-      discount,
-      hasDiscount,
-      videoLink, // New field for video link
-      rating, // New field for star rating
-    } = req.body;
+    const { name, price, shortDescription, fullDescription, stockQuantity, category, 
+            discount, hasDiscount, videoLink, rating } = req.body;
 
-    // Validation for required fields
-    if (!name || name.trim() === "") {
+    if (!name || !name.trim()) {
       return res.status(400).json({ message: "Name is required" });
     }
 
-    // Check if the category exists
     const existingCategory = await Category.findById(category);
     if (!existingCategory) {
       return res.status(400).json({ message: "Invalid category ID" });
     }
 
-    // Create a new product with optional discount
     const newProduct = new Product({
       name: name.trim(),
       price,
@@ -87,128 +75,105 @@ exports.createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      images: req.files ? req.files.map((file) => file.key) : [], // Store multiple S3 keys
-      discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
-      hasDiscount: hasDiscount === "true", // Convert to boolean
-      videoLink, // Add video link
-      rating: rating || 0, // Default rating to 0 if not provided
+      images: req.files ? req.files.map(file => file.key) : [],
+      discount: hasDiscount === "true" ? discount : 0,
+      hasDiscount: hasDiscount === "true",
+      videoLink,
+      rating: rating || 0,
     });
 
     await newProduct.save();
-
-    // Populate the category field
     const populatedProduct = await Product.findById(newProduct._id).populate("category", "name");
 
-    // Include the full image URLs in the response
-    const responseProduct = {
+    res.status(201).json({
       ...populatedProduct.toObject(),
-      images: populatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    };
-
-    res.status(201).json(responseProduct);
+      images: mapImages(populatedProduct.images)
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Update product with sold count and adjust stock
+// Update product
 exports.updateProduct = async (req, res) => {
   try {
-    const {
-      name,
-      price,
-      shortDescription,
-      fullDescription,
-      stockQuantity,
-      category,
-      discount,
-      hasDiscount,
-      sold, // User-provided sold count
-      videoLink, // New field for video link
-      rating, // New field for star rating
-    } = req.body;
-
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    let updateData = {};
+    const updateData = {};
+    const { name, price, shortDescription, fullDescription, stockQuantity, 
+           category, discount, hasDiscount, sold, videoLink, rating } = req.body;
 
+    // Basic field updates
     if (name) updateData.name = name;
     if (price) updateData.price = price;
     if (shortDescription) updateData.shortDescription = shortDescription;
     if (fullDescription) updateData.fullDescription = fullDescription;
     if (discount !== undefined) updateData.discount = hasDiscount === "true" ? discount : 0;
     if (hasDiscount !== undefined) updateData.hasDiscount = hasDiscount === "true";
-    if (videoLink) updateData.videoLink = videoLink; // Update video link
-    if (rating) updateData.rating = rating; // Update star rating
+    if (videoLink) updateData.videoLink = videoLink;
+    if (rating) updateData.rating = rating;
 
-    // ✅ Check if sold increased
+    // Handle sold count
     if (sold !== undefined) {
       const newSold = Number(sold);
       if (newSold < product.sold) {
         return res.status(400).json({ message: "Sold count cannot decrease" });
       }
-
       const increaseInSold = newSold - product.sold;
       if (increaseInSold > 0) {
-        // ✅ Reduce stockQuantity accordingly
         const newStockQuantity = product.stockQuantity - increaseInSold;
         if (newStockQuantity < 0) {
           return res.status(400).json({ message: "Not enough stock available" });
         }
         updateData.stockQuantity = newStockQuantity;
       }
-
       updateData.sold = newSold;
     }
 
-    // ✅ Allow stockQuantity to be updated only if provided
+    // Handle stock quantity
     if (stockQuantity !== undefined) {
       updateData.stockQuantity = Number(stockQuantity);
     }
 
-    // Validate and update category
+    // Handle category update
     if (category) {
-      try {
-        const existingCategory = await Category.findById(category);
-        if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
-        updateData.category = category;
-      } catch (error) {
-        return res.status(400).json({ message: "Invalid category format" });
-      }
+      const existingCategory = await Category.findById(category);
+      if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
+      updateData.category = category;
     }
 
-    // Handle image upload
-    if (req.files && req.files.length > 0) {
-      // Delete the old images from S3 if they exist
-      if (product.images && product.images.length > 0) {
-        for (const imageKey of product.images) {
+    // Handle image updates
+    if (req.files?.length > 0) {
+      // Delete old images
+      if (product.images?.length > 0) {
+        await Promise.all(product.images.map(async (imageKey) => {
           try {
             await s3.send(new DeleteObjectCommand({
               Bucket: process.env.AWS_BUCKET_NAME,
               Key: imageKey,
             }));
-            console.log("Old image deleted from S3:", imageKey);
           } catch (error) {
-            console.error("Error deleting old image from S3:", error);
+            console.error("Error deleting old image:", error);
           }
-        }
+        }));
       }
-      updateData.images = req.files.map((file) => file.key); // Store the new S3 keys
+      updateData.images = req.files.map(file => file.key);
     }
 
-    // Update product
-    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true }
+    ).populate("category", "name");
 
-    if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
-
-    // Include the full image URLs in the response
-    const responseProduct = {
-      ...updatedProduct.toObject(),
-      images: updatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    };
-
-    res.json({ message: "Product updated successfully", product: responseProduct });
+    res.json({
+      message: "Product updated successfully",
+      product: {
+        ...updatedProduct.toObject(),
+        images: mapImages(updatedProduct.images)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -218,12 +183,10 @@ exports.updateProduct = async (req, res) => {
 exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
-    // Add the base URL for the images
-    const productsWithImageUrl = products.map((product) => ({
+    res.json(products.map(product => ({
       ...product.toObject(),
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    }));
-    res.json(productsWithImageUrl);
+      images: mapImages(product.images)
+    })));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -234,12 +197,11 @@ exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("category", "name");
     if (!product) return res.status(404).json({ message: "Product not found" });
-    // Add the base URL for the images
-    const responseProduct = {
+    
+    res.json({
       ...product.toObject(),
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    };
-    res.json(responseProduct);
+      images: mapImages(product.images)
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -251,19 +213,18 @@ exports.deleteProduct = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    // Delete the images from S3 if they exist
-    if (product.images && product.images.length > 0) {
-      for (const imageKey of product.images) {
+    // Delete images from S3
+    if (product.images?.length > 0) {
+      await Promise.all(product.images.map(async (imageKey) => {
         try {
           await s3.send(new DeleteObjectCommand({
             Bucket: process.env.AWS_BUCKET_NAME,
             Key: imageKey,
           }));
-          console.log("Image deleted from S3:", imageKey);
         } catch (error) {
-          console.error("Error deleting image from S3:", error);
+          console.error("Error deleting image:", error);
         }
-      }
+      }));
     }
 
     await product.deleteOne();
@@ -276,85 +237,52 @@ exports.deleteProduct = async (req, res) => {
 // Get discounted products
 exports.getDiscountedProducts = async (req, res) => {
   try {
-    const discountedProducts = await Product.find({
+    const products = await Product.find({
       hasDiscount: true,
-      discount: { $gt: 0 },
+      discount: { $gt: 0 }
     }).populate("category", "name");
 
-    const productsWithImageUrl = discountedProducts.map((product) => ({
-      _id: product._id,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      category: product.category ? product.category.name : "Uncategorized",
-      price: product.price,
-      discount: product.discount,
+    res.json(products.map(product => ({
+      ...product.toObject(),
+      images: mapImages(product.images),
       originalPrice: product.price,
-      calculatedPrice: product.price - (product.price * product.discount) / 100,
-      hasDiscount: product.hasDiscount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
-    }));
-
-    res.json(productsWithImageUrl);
+      calculatedPrice: product.price - (product.price * product.discount) / 100
+    })));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Get top 5 best-selling products
+// Get best sellers
 exports.getBestSellers = async (req, res) => {
   try {
-    const bestSellers = await Product.find()
-      .sort({ sold: -1 }) // Sort by highest sold first
+    const products = await Product.find()
+      .sort({ sold: -1 })
       .limit(5)
       .populate("category", "name");
 
-    const productsWithRanking = bestSellers.map((product, index) => ({
-      rank: index + 1, // Assign rank from 1 to 5
-      _id: product._id,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      category: product.category ? product.category.name : "Uncategorized",
-      price: product.price,
-      sold: product.sold,
-      stockQuantity: product.stockQuantity,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
-    }));
-
-    res.json(productsWithRanking);
+    res.json(products.map((product, index) => ({
+      ...product.toObject(),
+      images: mapImages(product.images),
+      rank: index + 1
+    })));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Get products with no discount
+// Get non-discounted products
 exports.getNonDiscountedProducts = async (req, res) => {
   try {
-    const nonDiscountedProducts = await Product.find({
+    const products = await Product.find({
       hasDiscount: false,
-      discount: 0,
+      discount: 0
     }).populate("category", "name");
 
-    const productsWithImageUrl = nonDiscountedProducts.map((product) => ({
-      _id: product._id,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      category: product.category ? product.category.name : "Uncategorized",
-      price: product.price,
-      hasDiscount: product.hasDiscount,
-      discount: product.discount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
-    }));
-
-    res.json(productsWithImageUrl);
+    res.json(products.map(product => ({
+      ...product.toObject(),
+      images: mapImages(product.images)
+    })));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -365,41 +293,23 @@ exports.getProductsByCategory = async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
 
-    // Validate category ID
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({ message: "Invalid category ID" });
     }
 
-    // Check if the category exists
     const category = await Category.findById(categoryId);
-    if (!category) {
-      return res.status(404).json({ message: "Category not found" });
-    }
+    if (!category) return res.status(404).json({ message: "Category not found" });
 
-    // Fetch products by category
     const products = await Product.find({ category: categoryId }).populate("category", "name");
 
-    // Add the base URL for the images
-    const productsWithImageUrl = products.map((product) => ({
-      _id: product._id,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      category: product.category ? product.category.name : "Uncategorized",
-      price: product.price,
-      discount: product.discount,
-      hasDiscount: product.hasDiscount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
-    }));
-
-    res.json(productsWithImageUrl);
+    res.json(products.map(product => ({
+      ...product.toObject(),
+      images: mapImages(product.images),
+      category: product.category?.name || "Uncategorized"
+    })));
   } catch (error) {
-    console.error("Error fetching products by category:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Export the upload middleware
 module.exports.upload = upload;
