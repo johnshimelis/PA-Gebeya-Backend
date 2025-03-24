@@ -2,72 +2,35 @@ const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS 
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
-const { SSM } = require("aws-sdk"); // AWS SDK for fetching parameters
 const Category = require("../models/Category"); // Import the Category model
 
-// Initialize AWS SSM
-const ssm = new SSM({ region: "eu-north-1" }); // Replace with your AWS region
-
-// Function to fetch parameters from AWS Systems Manager
-async function getParameter(name, isSecure = false) {
-  const param = await ssm
-    .getParameter({
-      Name: name,
-      WithDecryption: isSecure,
-    })
-    .promise();
-  return param.Parameter.Value;
-}
-
-// Load AWS environment variables from AWS Systems Manager
-async function loadAWSEnv() {
-  try {
-    process.env.AWS_ACCESS_KEY_ID = await getParameter("/pgebeya-backend/AWS_ACCESS_KEY_ID", true);
-    process.env.AWS_SECRET_ACCESS_KEY = await getParameter("/pgebeya-backend/AWS_SECRET_ACCESS_KEY", true);
-    process.env.AWS_REGION = await getParameter("/pgebeya-backend/AWS_REGION");
-    process.env.AWS_BUCKET_NAME = await getParameter("/pgebeya-backend/AWS_BUCKET_NAME");
-
-    console.log("✅ AWS environment variables loaded successfully");
-  } catch (error) {
-    console.error("❌ Error loading AWS environment variables:", error);
-    process.exit(1); // Exit the process if environment variables fail to load
-  }
-}
-
 // Configure AWS S3 (SDK v3)
-let s3;
-let upload;
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
-async function initializeS3() {
-  await loadAWSEnv();
-
-  s3 = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// Multer configuration for S3 (SDK v3)
+const upload = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.AWS_BUCKET_NAME,
+    metadata: (req, file, cb) => {
+      cb(null, { fieldName: file.fieldname });
     },
-  });
-
-  // Multer configuration for S3 (SDK v3)
-  upload = multer({
-    storage: multerS3({
-      s3: s3,
-      bucket: process.env.AWS_BUCKET_NAME,
-      metadata: (req, file, cb) => {
-        cb(null, { fieldName: file.fieldname });
-      },
-      key: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const fileName = `${Date.now()}${ext}`;
-        cb(null, fileName);
-      },
-    }),
-    fileFilter: (req, file, cb) => {
-      file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
+    key: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      const fileName = `${Date.now()}${ext}`;
+      cb(null, fileName);
     },
-  });
-}
+  }),
+  fileFilter: (req, file, cb) => {
+    file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
+  },
+});
 
 // Helper function to get full image URL
 const getImageUrl = (imageName) =>
@@ -183,9 +146,6 @@ const deleteCategory = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
-// Initialize S3 and upload middleware
-initializeS3();
 
 module.exports = {
   createCategory,

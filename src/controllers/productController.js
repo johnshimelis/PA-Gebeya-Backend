@@ -1,5 +1,4 @@
 const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const { SSM } = require("aws-sdk"); // AWS SDK for fetching parameters
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
@@ -7,47 +6,14 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
-// Initialize AWS SSM
-const ssm = new SSM({ region: "eu-north-1" }); // Replace with your AWS region
-
-// Function to fetch parameters from AWS Systems Manager
-async function getParameter(name, isSecure = false) {
-  const param = await ssm
-    .getParameter({
-      Name: name,
-      WithDecryption: isSecure,
-    })
-    .promise();
-  return param.Parameter.Value;
-}
-
-// Load environment variables from AWS Systems Manager
-async function loadEnv() {
-  try {
-    process.env.AWS_ACCESS_KEY_ID = await getParameter("/pgebeya-backend/AWS_ACCESS_KEY_ID", true);
-    process.env.AWS_SECRET_ACCESS_KEY = await getParameter("/pgebeya-backend/AWS_SECRET_ACCESS_KEY", true);
-    process.env.AWS_REGION = await getParameter("/pgebeya-backend/AWS_REGION");
-    process.env.AWS_BUCKET_NAME = await getParameter("/pgebeya-backend/AWS_BUCKET_NAME");
-
-    console.log("✅ Environment variables loaded successfully");
-  } catch (error) {
-    console.error("❌ Error loading environment variables:", error);
-    process.exit(1); // Exit the process if environment variables fail to load
-  }
-}
-
 // Configure AWS S3 (SDK v3)
-let s3;
-async function configureS3() {
-  await loadEnv(); // Ensure environment variables are loaded
-  s3 = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-  });
-}
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 // Multer configuration for S3 (SDK v3)
 const upload = multer({
@@ -64,18 +30,10 @@ const upload = multer({
     },
   }),
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/bmp",
-      "image/tiff",
-      "image/svg+xml",
-      "image/avif",
-      "application/octet-stream", // Add 'application/octet-stream' for AVIF fallback
-    ];
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".avif"];
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
+      'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
+      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
     const ext = path.extname(file.originalname).toLowerCase();
 
@@ -226,12 +184,10 @@ exports.updateProduct = async (req, res) => {
       if (product.images && product.images.length > 0) {
         for (const imageKey of product.images) {
           try {
-            await s3.send(
-              new DeleteObjectCommand({
-                Bucket: process.env.AWS_BUCKET_NAME,
-                Key: imageKey,
-              })
-            );
+            await s3.send(new DeleteObjectCommand({
+              Bucket: process.env.AWS_BUCKET_NAME,
+              Key: imageKey,
+            }));
             console.log("Old image deleted from S3:", imageKey);
           } catch (error) {
             console.error("Error deleting old image from S3:", error);
@@ -299,12 +255,10 @@ exports.deleteProduct = async (req, res) => {
     if (product.images && product.images.length > 0) {
       for (const imageKey of product.images) {
         try {
-          await s3.send(
-            new DeleteObjectCommand({
-              Bucket: process.env.AWS_BUCKET_NAME,
-              Key: imageKey,
-            })
-          );
+          await s3.send(new DeleteObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: imageKey,
+          }));
           console.log("Image deleted from S3:", imageKey);
         } catch (error) {
           console.error("Error deleting image from S3:", error);
@@ -446,9 +400,6 @@ exports.getProductsByCategory = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
-// Initialize S3 configuration
-configureS3();
 
 // Export the upload middleware
 module.exports.upload = upload;
