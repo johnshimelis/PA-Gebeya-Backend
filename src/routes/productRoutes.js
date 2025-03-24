@@ -1,20 +1,28 @@
 const express = require("express");
+const router = express.Router();
 const productController = require("../controllers/productController");
 
-const router = express.Router();
-
-// Import the upload middleware from productController
-const { upload } = productController;
+// Import the S3 upload middleware from the controller
+const upload = productController.upload;
 
 // Routes
-router.post("/", upload.array("images", 10), productController.createProduct); // Allow up to 10 images
+router.post("/", 
+  upload, // Use the S3 upload middleware
+  productController.createProduct
+);
+
 router.get("/", productController.getAllProducts);
 router.get("/discounted", productController.getDiscountedProducts);
 router.get("/bestsellers", productController.getBestSellers);
 router.get("/nondiscount", productController.getNonDiscountedProducts);
 router.get("/:id", productController.getProductById);
 router.get("/category/:categoryId", productController.getProductsByCategory);
-router.put("/:id", upload.array("images", 10), productController.updateProduct); // Allow up to 10 images
+
+router.put("/:id", 
+  upload, // Use the same S3 upload middleware for updates
+  productController.updateProduct
+);
+
 router.delete("/:id", productController.deleteProduct);
 
 // Error Handling Middleware for Multer
