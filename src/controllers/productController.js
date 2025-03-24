@@ -102,7 +102,7 @@ exports.createProduct = async (req, res) => {
     // Include the full image URLs in the response
     const responseProduct = {
       ...populatedProduct.toObject(),
-      images: (populatedProduct.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: populatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     };
 
     res.status(201).json(responseProduct);
@@ -205,7 +205,7 @@ exports.updateProduct = async (req, res) => {
     // Include the full image URLs in the response
     const responseProduct = {
       ...updatedProduct.toObject(),
-      images: (updatedProduct.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: updatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     };
 
     res.json({ message: "Product updated successfully", product: responseProduct });
@@ -221,7 +221,7 @@ exports.getAllProducts = async (req, res) => {
     // Add the base URL for the images
     const productsWithImageUrl = products.map((product) => ({
       ...product.toObject(),
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     }));
     res.json(productsWithImageUrl);
   } catch (error) {
@@ -237,7 +237,7 @@ exports.getProductById = async (req, res) => {
     // Add the base URL for the images
     const responseProduct = {
       ...product.toObject(),
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
     };
     res.json(responseProduct);
   } catch (error) {
@@ -292,7 +292,7 @@ exports.getDiscountedProducts = async (req, res) => {
       originalPrice: product.price,
       calculatedPrice: product.price - (product.price * product.discount) / 100,
       hasDiscount: product.hasDiscount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -321,7 +321,7 @@ exports.getBestSellers = async (req, res) => {
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -349,7 +349,7 @@ exports.getNonDiscountedProducts = async (req, res) => {
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
@@ -389,7 +389,7 @@ exports.getProductsByCategory = async (req, res) => {
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      images: (product.images || []).map((image) => getImageUrl(image)), // Added null check here
+      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
       videoLink: product.videoLink, // Include video link
       rating: product.rating, // Include star rating
     }));
