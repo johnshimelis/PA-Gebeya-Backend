@@ -1,4 +1,4 @@
-require("dotenv").config();
+const { SSM } = require("aws-sdk"); // AWS SDK for fetching parameters
 const User = require("../models/Users");
 const UserOrder = require("../models/UserOrder");
 const Message = require("../models/Message");
@@ -7,6 +7,40 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 
+// Initialize AWS SSM
+const ssm = new SSM({ region: "eu-north-1" }); // Replace with your AWS region
+
+// Function to fetch parameters from AWS Systems Manager
+async function getParameter(name, isSecure = false) {
+  const param = await ssm
+    .getParameter({
+      Name: name,
+      WithDecryption: isSecure,
+    })
+    .promise();
+  return param.Parameter.Value;
+}
+
+// Load environment variables from AWS Systems Manager
+async function loadEnv() {
+  try {
+    process.env.EMAIL_HOST = await getParameter("/pgebeya-backend/EMAIL_HOST");
+    process.env.EMAIL_PORT = await getParameter("/pgebeya-backend/EMAIL_PORT");
+    process.env.EMAIL_USER = await getParameter("/pgebeya-backend/EMAIL_USER");
+    process.env.EMAIL_PASS = await getParameter("/pgebeya-backend/EMAIL_PASS", true);
+    process.env.JWT_SECRET = await getParameter("/pgebeya-backend/JWT_SECRET", true);
+
+    console.log("✅ Environment variables loaded successfully");
+  } catch (error) {
+    console.error("❌ Error loading environment variables:", error);
+    process.exit(1); // Exit the process if environment variables fail to load
+  }
+}
+
+// Initialize environment variables
+loadEnv();
+
+// Function to send OTP via email
 const sendOTP = async (email, otp) => {
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST || "smtp.gmail.com",
@@ -34,6 +68,7 @@ const sendOTP = async (email, otp) => {
   }
 };
 
+// Register a new user
 const registerUser = async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
 
@@ -61,6 +96,7 @@ const registerUser = async (req, res) => {
   }
 };
 
+// Login user and send OTP
 const loginUser = async (req, res) => {
   const { phoneNumber } = req.body;
 
@@ -86,6 +122,7 @@ const loginUser = async (req, res) => {
   }
 };
 
+// Verify OTP and generate JWT token
 const verifyOTP = async (req, res) => {
   const { phoneNumber, otp } = req.body;
 
@@ -105,9 +142,9 @@ const verifyOTP = async (req, res) => {
     });
 
     // Fetch the user's personalized data
-    const orders = await UserOrder.find({ userId: user._id }).select('date status total');
-    const messages = await Message.find({ userId: user._id }).select('from message read date');
-    const notifications = await Notification.find({ userId: user._id }).select('message date');
+    const orders = await UserOrder.find({ userId: user._id }).select("date status total");
+    const messages = await Message.find({ userId: user._id }).select("from message read date");
+    const notifications = await Notification.find({ userId: user._id }).select("message date");
 
     res.status(200).json({
       message: "Login successful",
@@ -127,7 +164,6 @@ const verifyOTP = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 module.exports = {
   registerUser,

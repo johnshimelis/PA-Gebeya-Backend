@@ -1,5 +1,39 @@
+productRoutes.js
+
+const express = require("express");
+const productController = require("../controllers/productController");
+
+const router = express.Router();
+
+// Import the upload middleware from productController
+const { upload } = productController;
+
+// Routes
+router.post("/", upload.single("image"), productController.createProduct);
+router.get("/", productController.getAllProducts);
+router.get("/discounted", productController.getDiscountedProducts);
+router.get("/bestsellers", productController.getBestSellers);
+router.get("/nondiscount", productController.getNonDiscountedProducts);
+router.get("/:id", productController.getProductById);
+router.get("/category/:categoryId", productController.getProductsByCategory);
+router.put("/:id", upload.single("image"), productController.updateProduct);
+router.delete("/:id", productController.deleteProduct);
+
+// Error Handling Middleware for Multer
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: err.message });
+  } else if (err) {
+    return res.status(400).json({ message: err.message });
+  }
+  next();
+});
+
+module.exports = router;
+
+productController.js
+
 const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
-const { SSM } = require("aws-sdk"); // AWS SDK for fetching parameters
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
@@ -7,47 +41,14 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 
-// Initialize AWS SSM
-const ssm = new SSM({ region: "eu-north-1" }); // Replace with your AWS region
-
-// Function to fetch parameters from AWS Systems Manager
-async function getParameter(name, isSecure = false) {
-  const param = await ssm
-    .getParameter({
-      Name: name,
-      WithDecryption: isSecure,
-    })
-    .promise();
-  return param.Parameter.Value;
-}
-
-// Load environment variables from AWS Systems Manager
-async function loadEnv() {
-  try {
-    process.env.AWS_ACCESS_KEY_ID = await getParameter("/pgebeya-backend/AWS_ACCESS_KEY_ID", true);
-    process.env.AWS_SECRET_ACCESS_KEY = await getParameter("/pgebeya-backend/AWS_SECRET_ACCESS_KEY", true);
-    process.env.AWS_REGION = await getParameter("/pgebeya-backend/AWS_REGION");
-    process.env.AWS_BUCKET_NAME = await getParameter("/pgebeya-backend/AWS_BUCKET_NAME");
-
-    console.log("✅ Environment variables loaded successfully");
-  } catch (error) {
-    console.error("❌ Error loading environment variables:", error);
-    process.exit(1); // Exit the process if environment variables fail to load
-  }
-}
-
 // Configure AWS S3 (SDK v3)
-let s3;
-async function configureS3() {
-  await loadEnv(); // Ensure environment variables are loaded
-  s3 = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-  });
-}
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 // Multer configuration for S3 (SDK v3)
 const upload = multer({
@@ -59,23 +60,15 @@ const upload = multer({
     },
     key: (req, file, cb) => {
       const ext = path.extname(file.originalname);
-      const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`; // Unique filename
+      const fileName = `${Date.now()}${ext}`;
       cb(null, fileName);
     },
   }),
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/bmp",
-      "image/tiff",
-      "image/svg+xml",
-      "image/avif",
-      "application/octet-stream", // Add 'application/octet-stream' for AVIF fallback
-    ];
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".avif"];
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
+      'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
+      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
     const ext = path.extname(file.originalname).toLowerCase();
 
@@ -94,7 +87,7 @@ const getImageUrl = (imageName) =>
 // Create a new product
 exports.createProduct = async (req, res) => {
   console.log("📝 Raw Request Body:", req.body);
-  console.log("📸 Uploaded Files:", req.files);
+  console.log("📸 Uploaded File:", req.file);
 
   try {
     const {
@@ -106,8 +99,6 @@ exports.createProduct = async (req, res) => {
       category,
       discount,
       hasDiscount,
-      videoLink, // New field for video link
-      rating, // New field for star rating
     } = req.body;
 
     // Validation for required fields
@@ -129,11 +120,9 @@ exports.createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      images: req.files ? req.files.map((file) => file.key) : [], // Store multiple S3 keys
+      image: req.file ? req.file.key : null, // Store the S3 key
       discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
       hasDiscount: hasDiscount === "true", // Convert to boolean
-      videoLink, // Add video link
-      rating: rating || 0, // Default rating to 0 if not provided
     });
 
     await newProduct.save();
@@ -141,10 +130,10 @@ exports.createProduct = async (req, res) => {
     // Populate the category field
     const populatedProduct = await Product.findById(newProduct._id).populate("category", "name");
 
-    // Include the full image URLs in the response
+    // Include the full image URL in the response
     const responseProduct = {
       ...populatedProduct.toObject(),
-      images: populatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
+      photo: populatedProduct.image ? getImageUrl(populatedProduct.image) : null,
     };
 
     res.status(201).json(responseProduct);
@@ -166,8 +155,6 @@ exports.updateProduct = async (req, res) => {
       discount,
       hasDiscount,
       sold, // User-provided sold count
-      videoLink, // New field for video link
-      rating, // New field for star rating
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -181,8 +168,6 @@ exports.updateProduct = async (req, res) => {
     if (fullDescription) updateData.fullDescription = fullDescription;
     if (discount !== undefined) updateData.discount = hasDiscount === "true" ? discount : 0;
     if (hasDiscount !== undefined) updateData.hasDiscount = hasDiscount === "true";
-    if (videoLink) updateData.videoLink = videoLink; // Update video link
-    if (rating) updateData.rating = rating; // Update star rating
 
     // ✅ Check if sold increased
     if (sold !== undefined) {
@@ -221,24 +206,20 @@ exports.updateProduct = async (req, res) => {
     }
 
     // Handle image upload
-    if (req.files && req.files.length > 0) {
-      // Delete the old images from S3 if they exist
-      if (product.images && product.images.length > 0) {
-        for (const imageKey of product.images) {
-          try {
-            await s3.send(
-              new DeleteObjectCommand({
-                Bucket: process.env.AWS_BUCKET_NAME,
-                Key: imageKey,
-              })
-            );
-            console.log("Old image deleted from S3:", imageKey);
-          } catch (error) {
-            console.error("Error deleting old image from S3:", error);
-          }
+    if (req.file) {
+      // Delete the old image from S3 if it exists
+      if (product.image) {
+        try {
+          await s3.send(new DeleteObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: product.image,
+          }));
+          console.log("Old image deleted from S3:", product.image);
+        } catch (error) {
+          console.error("Error deleting old image from S3:", error);
         }
       }
-      updateData.images = req.files.map((file) => file.key); // Store the new S3 keys
+      updateData.image = req.file.key; // Store the new S3 key
     }
 
     // Update product
@@ -246,10 +227,10 @@ exports.updateProduct = async (req, res) => {
 
     if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
 
-    // Include the full image URLs in the response
+    // Include the full image URL in the response
     const responseProduct = {
       ...updatedProduct.toObject(),
-      images: updatedProduct.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
+      photo: updatedProduct.image ? getImageUrl(updatedProduct.image) : null,
     };
 
     res.json({ message: "Product updated successfully", product: responseProduct });
@@ -257,98 +238,6 @@ exports.updateProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
-// Get all products
-exports.getAllProducts = async (req, res) => {
-  try {
-    const products = await Product.find().populate("category", "name");
-    // Add the base URL for the images
-    const productsWithImageUrl = products.map((product) => ({
-      ...product.toObject(),
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    }));
-    res.json(productsWithImageUrl);
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-// Get product by ID
-exports.getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).populate("category", "name");
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    // Add the base URL for the images
-    const responseProduct = {
-      ...product.toObject(),
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-    };
-    res.json(responseProduct);
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-// Delete product
-exports.deleteProduct = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-
-    // Delete the images from S3 if they exist
-    if (product.images && product.images.length > 0) {
-      for (const imageKey of product.images) {
-        try {
-          await s3.send(
-            new DeleteObjectCommand({
-              Bucket: process.env.AWS_BUCKET_NAME,
-              Key: imageKey,
-            })
-          );
-          console.log("Image deleted from S3:", imageKey);
-        } catch (error) {
-          console.error("Error deleting image from S3:", error);
-        }
-      }
-    }
-
-    await product.deleteOne();
-    res.json({ message: "Product deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-// Get discounted products
-exports.getDiscountedProducts = async (req, res) => {
-  try {
-    const discountedProducts = await Product.find({
-      hasDiscount: true,
-      discount: { $gt: 0 },
-    }).populate("category", "name");
-
-    const productsWithImageUrl = discountedProducts.map((product) => ({
-      _id: product._id,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
-      category: product.category ? product.category.name : "Uncategorized",
-      price: product.price,
-      discount: product.discount,
-      originalPrice: product.price,
-      calculatedPrice: product.price - (product.price * product.discount) / 100,
-      hasDiscount: product.hasDiscount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
-    }));
-
-    res.json(productsWithImageUrl);
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
 // Get top 5 best-selling products
 exports.getBestSellers = async (req, res) => {
   try {
@@ -361,15 +250,14 @@ exports.getBestSellers = async (req, res) => {
       rank: index + 1, // Assign rank from 1 to 5
       _id: product._id,
       name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       sold: product.sold,
       stockQuantity: product.stockQuantity,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithRanking);
@@ -389,18 +277,107 @@ exports.getNonDiscountedProducts = async (req, res) => {
     const productsWithImageUrl = nonDiscountedProducts.map((product) => ({
       _id: product._id,
       name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       hasDiscount: product.hasDiscount,
       discount: product.discount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Get all products
+exports.getAllProducts = async (req, res) => {
+  try {
+    const products = await Product.find().populate("category", "name");
+    // Add the base URL for the image
+    const productsWithImageUrl = products.map(product => ({
+      ...product.toObject(),
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
+    }));
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Get product by ID
+exports.getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id).populate("category", "name");
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    // Add the base URL for the image
+    const responseProduct = {
+      ...product.toObject(),
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
+    };
+    res.json(responseProduct);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Get discounted products
+exports.getDiscountedProducts = async (req, res) => {
+  try {
+    const discountedProducts = await Product.find({
+      hasDiscount: true,
+      discount: { $gt: 0 },
+    }).populate("category", "name");
+
+    const productsWithImageUrl = discountedProducts.map((product) => ({
+      _id: product._id,
+      name: product.name,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
+      category: product.category ? product.category.name : "Uncategorized",
+      price: product.price,
+      discount: product.discount,
+      originalPrice: product.price,
+      calculatedPrice: product.price - (product.price * product.discount) / 100,
+      hasDiscount: product.hasDiscount,
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
+    }));
+
+    res.json(productsWithImageUrl);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Delete product
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Delete the image from S3 if it exists
+    if (product.image) {
+      try {
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.AWS_BUCKET_NAME,
+          Key: product.image,
+        }));
+        console.log("Image deleted from S3:", product.image);
+      } catch (error) {
+        console.error("Error deleting image from S3:", error);
+      }
+    }
+
+    await product.deleteOne();
+    res.json({ message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -425,19 +402,18 @@ exports.getProductsByCategory = async (req, res) => {
     // Fetch products by category
     const products = await Product.find({ category: categoryId }).populate("category", "name");
 
-    // Add the base URL for the images
+    // Add the base URL for the image
     const productsWithImageUrl = products.map((product) => ({
       _id: product._id,
       name: product.name,
-      shortDescription: product.shortDescription,
-      fullDescription: product.fullDescription,
+      shortDescription: product.shortDescription, // Include shortDescription
+      fullDescription: product.fullDescription, // Include fullDescription
       category: product.category ? product.category.name : "Uncategorized",
       price: product.price,
       discount: product.discount,
       hasDiscount: product.hasDiscount,
-      images: product.images.map((image) => getImageUrl(image)), // Generate full URLs for all images
-      videoLink: product.videoLink, // Include video link
-      rating: product.rating, // Include star rating
+      image: product.image, // S3 key
+      photo: product.image ? getImageUrl(product.image) : null, // Full S3 URL
     }));
 
     res.json(productsWithImageUrl);
@@ -447,8 +423,27 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-// Initialize S3 configuration
-configureS3();
-
 // Export the upload middleware
 module.exports.upload = upload;
+
+Product.js
+
+const mongoose = require("mongoose");
+
+const productSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    shortDescription: { type: String, required: true },
+    fullDescription: { type: String, required: true },
+    stockQuantity: { type: Number, required: true },
+    sold: { type: Number, required: false, default: 0 },
+    category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
+    image: { type: String, required: false },
+    discount: { type: Number, required: false, default: 0 },
+    hasDiscount: { type: Boolean, required: false, default: false },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model("Product", productSchema);
