@@ -158,14 +158,16 @@ const createProduct = async (req, res) => {
   }
 };
 
-// Get all products
+// In your productController.js, modify the getAllProducts function:
 const getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate("category", "name");
     
     const productsWithUrls = products.map(product => ({
       ...product.toObject(),
-      imageUrls: (product.images || []).map(img => getImageUrl(img))
+      imageUrls: (product.images || []).map(img => 
+        `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${img}`
+      )
     }));
 
     res.json(productsWithUrls);
@@ -177,7 +179,6 @@ const getAllProducts = async (req, res) => {
     });
   }
 };
-
 // Get product by ID
 const getProductById = async (req, res) => {
   try {
