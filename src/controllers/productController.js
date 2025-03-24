@@ -417,5 +417,16 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-// Export the upload middleware
-module.exports.upload = upload;
+// At the bottom of productController.js
+module.exports = {
+  createProduct,
+  getAllProducts,
+  getProductById,
+  updateProduct,
+  deleteProduct,
+  getDiscountedProducts,
+  getBestSellers,
+  getNonDiscountedProducts,
+  getProductsByCategory,
+  upload // Make sure this is exported
+};
