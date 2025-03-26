@@ -317,26 +317,57 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// Delete product
+// Delete product with proper Promise.all handling
 const deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-
-    // Delete images from S3
-    if (product.images && product.images.length > 0) {
-      await Promise.all(req.files.map(file => 
-        s3.send(new DeleteObjectCommand({
-          Bucket: process.env.AWS_BUCKET_NAME,
-          Key: file.key,
-        })).catch(console.error)
-      ));
+    const productId = req.params.id;
+    
+    // Validate product ID format
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: "Invalid product ID format" });
     }
 
-    await product.deleteOne();
-    res.json({ message: "Product deleted successfully" });
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Delete images from S3 if they exist
+    if (product.images?.length > 0) {
+      try {
+        // Create array of delete promises
+        const deletePromises = product.images.map(imageKey => {
+          return s3.send(new DeleteObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: imageKey,
+          }));
+        });
+
+        // Wait for all deletions to complete
+        await Promise.all(deletePromises);
+      } catch (s3Error) {
+        console.error("Error deleting images from S3:", s3Error);
+        // Continue with product deletion even if image deletion fails
+      }
+    }
+
+    // Delete the product from database
+    await Product.findByIdAndDelete(productId);
+    
+    res.json({ 
+      success: true,
+      message: "Product deleted successfully",
+      deletedProductId: productId
+    });
+
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Delete product error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to delete product",
+      error: error.message,
+      productId: req.params.id
+    });
   }
 };
 
