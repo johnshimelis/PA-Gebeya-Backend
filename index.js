@@ -8,13 +8,12 @@ const app = express();
 
 // Allowed origins
 const allowedOrigins = [
-  "https://sprightly-sawine-43e5c3.netlify.app",
-  "https://chimerical-lebkuchen-58351a.netlify.app",
+ 
   "http://localhost:3000", // Add localhost:3000
   "http://localhost:3001", // Add localhost:3001
   "http://localhost:3002", // Add localhost:3001
-  "https://pgebeyaadmin.netlify.app",
-  "https://pgebeya.netlify.app",
+  "https://pegebeyaadmin.netlify.app",
+  "https://pegebeya.netlify.app",
   "http://pegebeya.com/",
   "https://pegebeya.com/",
   "https://admin.pegebeya.com/",
