@@ -17,6 +17,7 @@ const allowedOrigins = [
   "http://www.pegebeya.com/",
   "https://www.pegebeya.com/",
   "https://www.admin.pegebeya.com/",
+   "https://admin.pegebeya.com",
   
 ];
 
