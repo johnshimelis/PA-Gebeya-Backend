@@ -14,9 +14,9 @@ const allowedOrigins = [
   "http://localhost:3002", // Add localhost:3001
   "https://pegebeyaadmin.netlify.app",
   "https://pegebeya.netlify.app",
-  "http://www.pegebeya.com/",
-  "https://www.pegebeya.com/",
-  "https://www.admin.pegebeya.com/",
+  "http://www.pegebeya.com",
+  "https://www.pegebeya.com",
+  "https://www.admin.pegebeya.com",
    "https://admin.pegebeya.com",
   
 ];
