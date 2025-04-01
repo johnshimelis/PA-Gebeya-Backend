@@ -1,9 +1,13 @@
+
+require("dotenv").config();
 require("dotenv").config();
 const User = require("../models/Users");
+const UserOrder = require("../models/UserOrder");
+const Message = require("../models/Message");
+const Notification = require("../models/Notification");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-
 // Improved email transporter configuration
 const transporter = nodemailer.createTransport({
   service: process.env.EMAIL_SERVICE || 'gmail',
@@ -115,6 +119,7 @@ const registerUser = async (req, res) => {
   }
 };
 
+
 // Updated login function
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
@@ -150,31 +155,23 @@ const loginUser = async (req, res) => {
   }
 };
 
-// Updated verifyOTP function with basic user data
+// Updated verifyOTP function
+// Updated verifyOTP function with COMPLETE personalized data
 const verifyOTP = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: "User not found" 
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
     if (user.otp !== otp) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid OTP" 
-      });
+      return res.status(400).json({ message: "Invalid OTP" });
     }
 
     if (Date.now() > user.otpExpiry) {
-      return res.status(400).json({ 
-        success: false,
-        message: "OTP expired" 
-      });
+      return res.status(400).json({ message: "OTP expired" });
     }
 
     // Clear OTP after successful verification
@@ -187,8 +184,22 @@ const verifyOTP = async (req, res) => {
       expiresIn: "365d",
     });
 
+    // Fetch ALL of the user's personalized data
+    const [orders, messages, notifications] = await Promise.all([
+      UserOrder.find({ userId: user._id })
+        .select('date status total items')
+        .sort({ date: -1 }), // Get ALL orders sorted by newest first
+      
+      Message.find({ userId: user._id })
+        .select('from message read date')
+        .sort({ date: -1 }), // Get ALL messages sorted by newest first
+      
+      Notification.find({ userId: user._id })
+        .select('message date read')
+        .sort({ date: -1 }) // Get ALL notifications sorted by newest first
+    ]);
+
     res.status(200).json({
-      success: true,
       message: "OTP verification successful",
       token,
       user: {
@@ -196,10 +207,14 @@ const verifyOTP = async (req, res) => {
         fullName: user.fullName,
         phoneNumber: user.phoneNumber,
         email: user.email,
-        profileComplete: user.profileComplete || false,
+        profileComplete: user.profileComplete, // Include profile completion status
+        orders,
+        messages,
+        notifications,
+        // Include any other relevant user data
         addresses: user.addresses || [],
         paymentMethods: user.paymentMethods || []
-      }
+      },
     });
   } catch (error) {
     console.error("OTP verification error:", error);
@@ -210,10 +225,9 @@ const verifyOTP = async (req, res) => {
     });
   }
 };
-
 module.exports = {
   registerUser,
   loginUser,
   verifyOTP,
-  requestOTP
+  requestOTP // Export the new function
 };
