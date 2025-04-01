@@ -152,6 +152,7 @@ const loginUser = async (req, res) => {
 };
 
 // Updated verifyOTP function
+// Updated verifyOTP function with COMPLETE personalized data
 const verifyOTP = async (req, res) => {
   const { email, otp } = req.body;
 
@@ -174,9 +175,25 @@ const verifyOTP = async (req, res) => {
     user.otpExpiry = undefined;
     await user.save();
 
+    // Generate a JWT token for the user
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "365d",
     });
+
+    // Fetch ALL of the user's personalized data
+    const [orders, messages, notifications] = await Promise.all([
+      UserOrder.find({ userId: user._id })
+        .select('date status total items')
+        .sort({ date: -1 }), // Get ALL orders sorted by newest first
+      
+      Message.find({ userId: user._id })
+        .select('from message read date')
+        .sort({ date: -1 }), // Get ALL messages sorted by newest first
+      
+      Notification.find({ userId: user._id })
+        .select('message date read')
+        .sort({ date: -1 }) // Get ALL notifications sorted by newest first
+    ]);
 
     res.status(200).json({
       message: "OTP verification successful",
@@ -184,16 +201,26 @@ const verifyOTP = async (req, res) => {
       user: {
         id: user._id,
         fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
         email: user.email,
-        phoneNumber: user.phoneNumber
-      }
+        profileComplete: user.profileComplete, // Include profile completion status
+        orders,
+        messages,
+        notifications,
+        // Include any other relevant user data
+        addresses: user.addresses || [],
+        paymentMethods: user.paymentMethods || []
+      },
     });
   } catch (error) {
     console.error("OTP verification error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ 
+      success: false,
+      message: "Server error during OTP verification",
+      error: error.message 
+    });
   }
 };
-
 module.exports = {
   registerUser,
   loginUser,
