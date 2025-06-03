@@ -1,11 +1,11 @@
-const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3"); // AWS SDK v3
+const { S3Client } = require("@aws-sdk/client-s3");
 const multerS3 = require("multer-s3");
 const path = require("path");
 const multer = require("multer");
 const Order = require("../models/Order");
 const Product = require("../models/Product");
 
-// Configure AWS S3 (SDK v3)
+// Configure AWS S3
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -14,7 +14,7 @@ const s3 = new S3Client({
   },
 });
 
-// Multer configuration for S3 (SDK v3)
+// Multer configuration for S3
 const upload = multer({
   storage: multerS3({
     s3: s3,
@@ -27,12 +27,9 @@ const upload = multer({
       const fileName = `${Date.now()}${ext}`;
       cb(null, fileName);
     },
-    acl: undefined, // Remove ACL configuration
   }),
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
-      'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
-      'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 'application/octet-stream'];
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
 
     const ext = path.extname(file.originalname).toLowerCase();
@@ -49,75 +46,85 @@ const upload = multer({
 const getImageUrl = (imageName) =>
   imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
 
-// ✅ Create New Order
+// ✅ Create New Order (Updated to handle both JSON and form-data)
 exports.createOrder = async (req, res) => {
   try {
-    const cleanedBody = {};
-    Object.keys(req.body).forEach((key) => {
-      cleanedBody[key.trim()] = req.body[key];
-    });
+    let orderData = {};
+    
+    // Check if request is JSON (from cash on delivery)
+    if (req.headers['content-type']?.includes('application/json')) {
+      orderData = req.body;
+    } 
+    // Otherwise handle as multipart form (existing flow)
+    else {
+      // Process form-data fields
+      orderData = {
+        userId: req.body.userId,
+        name: req.body.name,
+        amount: req.body.amount,
+        phoneNumber: req.body.phoneNumber,
+        deliveryAddress: req.body.deliveryAddress,
+        status: req.body.status || "Pending",
+        paymentMethod: req.body.paymentMethod,
+        orderDetails: req.body.orderDetails ? JSON.parse(req.body.orderDetails) : [],
+        avatar: req.files["avatar"] ? getImageUrl(req.files["avatar"][0].key) : getImageUrl("default-avatar.png"),
+        paymentImage: req.files["paymentImage"] ? getImageUrl(req.files["paymentImage"][0].key) : null
+      };
+    }
 
-    console.log("📌 Cleaned Request Body:", cleanedBody);
-    console.log("📸 Uploaded Files:", req.files);
+    console.log("📌 Processing Order Data:", orderData);
 
-    const userId = cleanedBody.userId || "Unknown ID";
-    const name = cleanedBody.name || "Unknown";
-    const amount = cleanedBody.amount ? parseFloat(cleanedBody.amount) : 0;
-    const phoneNumber = cleanedBody.phoneNumber || "";
-    const deliveryAddress = cleanedBody.deliveryAddress || "";
-    const status = cleanedBody.status || "Pending";
+    // Common processing for both flows
+    const userId = orderData.userId || "Unknown ID";
+    const name = orderData.name || "Unknown";
+    const amount = orderData.amount ? parseFloat(orderData.amount) : 0;
+    const phoneNumber = orderData.phoneNumber || "";
+    const deliveryAddress = orderData.deliveryAddress || "";
+    const status = orderData.status || "Pending";
+    const paymentMethod = orderData.paymentMethod || "Cash On Delivery";
+    const avatar = orderData.avatar || getImageUrl("default-avatar.png");
 
-    // Upload avatar to S3
-    const avatar = req.files["avatar"]
-      ? getImageUrl(req.files["avatar"][0].key) // Use S3 key to generate URL
-      : getImageUrl("default-avatar.png");
-
-    console.log("🖼️ Avatar Path Saved:", avatar);
-
-    // Upload payment image to S3
-    const paymentImage = req.files["paymentImage"]
-      ? getImageUrl(req.files["paymentImage"][0].key) // Use S3 key to generate URL
-      : null;
-
-    // Upload product images to S3
-    const productImages = req.files["productImages"]
-      ? req.files["productImages"].map((file) => getImageUrl(file.key)) // Use S3 key to generate URLs
-      : [];
-
+    // Process order details - FIXED VERSION
     let orderDetails = [];
-    if (cleanedBody.orderDetails) {
-      try {
-        orderDetails = JSON.parse(cleanedBody.orderDetails);
+    if (orderData.orderDetails) {
+      // Handle both stringified JSON and direct array
+      const details = typeof orderData.orderDetails === 'string' 
+        ? JSON.parse(orderData.orderDetails)
+        : orderData.orderDetails;
 
-        orderDetails = await Promise.all(
-          orderDetails.map(async (item, index) => {
-            const product = await Product.findOne({ name: item.product });
+      orderDetails = await Promise.all(
+        details.map(async (item) => {
+          try {
+            // Handle both product object and direct productId
+            const productId = item.product?._id || item.productId;
+            const product = await Product.findById(productId);
 
             if (!product) {
-              console.error(`❌ Product not found: ${item.product}`);
+              console.error(`❌ Product not found for ID: ${productId}`);
               return null;
             }
 
-            console.log(`✅ Found Product: ${product.name} - ID: ${product._id}`);
-
             return {
-              productId: product._id, // ✅ Store actual product ID
-              product: item.product,
+              productId: product._id,
+              product: product.name,
               quantity: item.quantity || 1,
-              price: item.price || 0,
-              productImage: productImages[index] || null, // Use S3 URL
+              price: item.price || product.price || 0,
+              productImage: item.product?.images?.[0] || product.images?.[0] || null,
             };
-          })
-        );
+          } catch (error) {
+            console.error(`❌ Error processing order item:`, error);
+            return null;
+          }
+        })
+      );
 
-        orderDetails = orderDetails.filter((item) => item !== null); // Remove null values if any
-      } catch (error) {
-        return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
-      }
+      // Remove any null items from failed processing
+      orderDetails = orderDetails.filter(item => item !== null);
     }
 
-    console.log("✅ Final Order Details before saving:", orderDetails);
+    console.log("✅ Final Order Details:", orderDetails);
 
+    // Create new order
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
 
@@ -130,7 +137,8 @@ exports.createOrder = async (req, res) => {
       phoneNumber,
       deliveryAddress,
       avatar,
-      paymentImage,
+      paymentMethod,
+      paymentImage: orderData.paymentImage || null,
       orderDetails,
       createdAt: new Date(),
     });
@@ -138,10 +146,14 @@ exports.createOrder = async (req, res) => {
     await newOrder.save();
     res.status(201).json(newOrder);
   } catch (error) {
-    console.error("❌ Error creating order:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error("❌ Error creating order:", error);
+    res.status(500).json({ 
+      error: "Failed to create order",
+      details: error.message 
+    });
   }
 };
+
 
 // ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
 exports.updateOrder = async (req, res) => {
