@@ -12,7 +12,7 @@ const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID; // From your image: W4756bfe5e69ad52f24420c7a8d435cd0B
+const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 
 const sendOTP = async (phoneNumber) => {
   try {
@@ -48,8 +48,8 @@ const registerUser = async (req, res) => {
 
   try {
     // Validate phone number format
-    if (!phoneNumber.match(/^\+?[1-9]\d{1,14}$/)) {
-      return res.status(400).json({ message: "Invalid phone number format" });
+    if (!phoneNumber || !phoneNumber.match(/^\+?[1-9]\d{1,14}$/)) {
+      return res.status(400).json({ message: "Invalid phone number format. Please include country code." });
     }
 
     // Check if user exists by phone number or email
@@ -84,26 +84,30 @@ const registerUser = async (req, res) => {
 };
 
 const loginUser = async (req, res) => {
-  const { phoneNumber } = req.body;
-
   try {
-    // Validate phone number format
-    if (!phoneNumber.match(/^\+?[1-9]\d{1,14}$/)) {
-      return res.status(400).json({ message: "Invalid phone number format" });
+    const { phone } = req.body;
+    
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required" });
     }
 
-    const user = await User.findOne({ phoneNumber });
+    // Validate phone number format
+    if (!phone.match(/^\+?[1-9]\d{1,14}$/)) {
+      return res.status(400).json({ message: "Invalid phone number format. Please include country code." });
+    }
+
+    const user = await User.findOne({ phoneNumber: phone });
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "User not found. Please register first." });
     }
 
     // Start verification process
-    const verificationSid = await sendOTP(phoneNumber);
+    const verificationSid = await sendOTP(phone);
 
     res.status(200).json({ 
       message: "OTP sent to your phone number",
-      phoneNumber: phoneNumber,
-      verificationSid: verificationSid // Return verification SID for tracking
+      phoneNumber: phone,
+      verificationSid: verificationSid
     });
   } catch (error) {
     console.error("Error in login:", error);
@@ -114,9 +118,13 @@ const loginUser = async (req, res) => {
 };
 
 const verifyOTP = async (req, res) => {
-  const { phoneNumber, otp } = req.body;
-
   try {
+    const { phoneNumber, otp } = req.body;
+
+    if (!phoneNumber || !otp) {
+      return res.status(400).json({ message: "Phone number and OTP are required" });
+    }
+
     // First verify the OTP with Twilio
     const isVerified = await checkOTP(phoneNumber, otp);
     if (!isVerified) {
