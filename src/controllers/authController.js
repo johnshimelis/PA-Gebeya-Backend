@@ -32,16 +32,27 @@ const normalizePhoneNumber = (phone) => {
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // ✅ Send OTP with Africa's Talking
+// ✅ Send OTP with Africa's Talking
 const sendOTP = async (phoneNumber, otp) => {
   const sms = africastalking.SMS;
-  const response = await sms.send({
+  
+  const message = {
     to: [phoneNumber],
     message: `Your PA Gebeya OTP code is: ${otp}`,
-    from: "AFRICASTKNG", // Only valid if you’ve applied for sender ID
-  });
+  };
 
-  console.log(`OTP sent to ${phoneNumber}`, response);
+  // ❌ DO NOT include 'from' unless approved
+  // message.from = 'AFRICASTKNG'; // Uncomment only if you’ve applied for custom sender ID
+
+  try {
+    const response = await sms.send(message);
+    console.log(`✅ OTP sent to ${phoneNumber}`, response);
+  } catch (error) {
+    console.error(`❌ Failed to send OTP to ${phoneNumber}`, error);
+    throw new Error(error.message || "Failed to send OTP");
+  }
 };
+
 
 // ✅ Register User
 const registerUser = async (req, res) => {
