@@ -13,6 +13,7 @@ const twilioClient = twilio(
 );
 const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 
+// ✅ Normalize phone numbers that start with 09, 07, or +251...
 const normalizePhoneNumber = (phone) => {
   if (!phone) return phone;
   phone = phone.trim();
@@ -20,7 +21,7 @@ const normalizePhoneNumber = (phone) => {
   if (phone.startsWith('0')) {
     return '+251' + phone.substring(1);
   }
-  if (phone.length === 9 && phone.startsWith('9')) {
+  if ((phone.length === 9 && (phone.startsWith('9') || phone.startsWith('7')))) {
     return '+251' + phone;
   }
   if (phone.startsWith('+251')) {
@@ -30,6 +31,7 @@ const normalizePhoneNumber = (phone) => {
   return phone;
 };
 
+// ✅ Send OTP using Twilio
 const sendOTP = async (phoneNumber) => {
   try {
     const verification = await twilioClient.verify.v2
@@ -39,11 +41,12 @@ const sendOTP = async (phoneNumber) => {
     console.log(`Verification SID: ${verification.sid} sent to ${phoneNumber}`);
     return verification.sid;
   } catch (error) {
-    console.error("Error starting verification:", error);
+    console.error("Error sending OTP:", error);
     throw new Error(error.message || "Failed to send OTP");
   }
 };
 
+// ✅ Check OTP
 const checkOTP = async (phoneNumber, otpCode) => {
   try {
     const verificationCheck = await twilioClient.verify.v2
@@ -52,11 +55,12 @@ const checkOTP = async (phoneNumber, otpCode) => {
 
     return verificationCheck.status === "approved";
   } catch (error) {
-    console.error("Error checking verification:", error);
-    throw new Error(error.message || "Failed to verify OTP");
+    console.error("Error verifying OTP:", error);
+    throw new Error(error.message || "OTP verification failed");
   }
 };
 
+// ✅ Register User
 const registerUser = async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
 
@@ -88,6 +92,7 @@ const registerUser = async (req, res) => {
   }
 };
 
+// ✅ Login User (send OTP to all registered users)
 const loginUser = async (req, res) => {
   const { phoneNumber } = req.body;
 
@@ -112,6 +117,7 @@ const loginUser = async (req, res) => {
   }
 };
 
+// ✅ Verify OTP and login user
 const verifyOTP = async (req, res) => {
   const { phoneNumber, otp } = req.body;
 
