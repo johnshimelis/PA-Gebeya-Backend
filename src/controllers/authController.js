@@ -5,59 +5,42 @@ const Message = require("../models/Message");
 const Notification = require("../models/Notification");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const twilio = require("twilio");
+const africastalking = require("africastalking")({
+  apiKey: process.env.AT_API_KEY,
+  username: process.env.AT_USERNAME,
+});
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+const OTP_EXPIRATION_MINUTES = parseInt(process.env.OTP_EXPIRATION || "5", 10);
 
-// ✅ Normalize phone numbers that start with 09, 07, or +251...
+// Temporary OTP store (replace with DB in production)
+const otpStore = new Map();
+
+// ✅ Normalize phone number (09, 07, +251...)
 const normalizePhoneNumber = (phone) => {
-  if (!phone) return phone;
+  if (!phone) return null;
   phone = phone.trim();
 
-  if (phone.startsWith('0')) {
-    return '+251' + phone.substring(1);
-  }
-  if ((phone.length === 9 && (phone.startsWith('9') || phone.startsWith('7')))) {
-    return '+251' + phone;
-  }
-  if (phone.startsWith('+251')) {
-    return phone;
-  }
+  if (phone.startsWith("0")) return "+251" + phone.slice(1);
+  if ((phone.length === 9 && (phone.startsWith("9") || phone.startsWith("7"))))
+    return "+251" + phone;
+  if (phone.startsWith("+251")) return phone;
 
   return phone;
 };
 
-// ✅ Send OTP using Twilio
-const sendOTP = async (phoneNumber) => {
-  try {
-    const verification = await twilioClient.verify.v2
-      .services(verifyServiceSid)
-      .verifications.create({ to: phoneNumber, channel: "sms" });
+// ✅ Generate 6-digit OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-    console.log(`Verification SID: ${verification.sid} sent to ${phoneNumber}`);
-    return verification.sid;
-  } catch (error) {
-    console.error("Error sending OTP:", error);
-    throw new Error(error.message || "Failed to send OTP");
-  }
-};
+// ✅ Send OTP with Africa's Talking
+const sendOTP = async (phoneNumber, otp) => {
+  const sms = africastalking.SMS;
+  const response = await sms.send({
+    to: [phoneNumber],
+    message: `Your PA Gebeya OTP code is: ${otp}`,
+    from: "AFRICASTKNG", // Only valid if you’ve applied for sender ID
+  });
 
-// ✅ Check OTP
-const checkOTP = async (phoneNumber, otpCode) => {
-  try {
-    const verificationCheck = await twilioClient.verify.v2
-      .services(verifyServiceSid)
-      .verificationChecks.create({ to: phoneNumber, code: otpCode });
-
-    return verificationCheck.status === "approved";
-  } catch (error) {
-    console.error("Error verifying OTP:", error);
-    throw new Error(error.message || "OTP verification failed");
-  }
+  console.log(`OTP sent to ${phoneNumber}`, response);
 };
 
 // ✅ Register User
@@ -66,7 +49,6 @@ const registerUser = async (req, res) => {
 
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-
     const userExists = await User.findOne({
       $or: [{ phoneNumber: normalizedPhone }, { email }],
     });
@@ -76,6 +58,7 @@ const registerUser = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
     const newUser = new User({
       fullName,
       phoneNumber: normalizedPhone,
@@ -92,24 +75,28 @@ const registerUser = async (req, res) => {
   }
 };
 
-// ✅ Login User (send OTP to all registered users)
+// ✅ Login User with OTP
 const loginUser = async (req, res) => {
   const { phoneNumber } = req.body;
 
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-
     const user = await User.findOne({ phoneNumber: normalizedPhone });
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const verificationSid = await sendOTP(normalizedPhone);
+    const otp = generateOTP();
+    const expiresAt = Date.now() + OTP_EXPIRATION_MINUTES * 60 * 1000;
+
+    otpStore.set(normalizedPhone, { otp, expiresAt });
+
+    await sendOTP(normalizedPhone, otp);
 
     res.status(200).json({
       message: "OTP sent to your phone number",
       phoneNumber: normalizedPhone,
-      verificationSid,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -117,17 +104,28 @@ const loginUser = async (req, res) => {
   }
 };
 
-// ✅ Verify OTP and login user
+// ✅ Verify OTP and Log In
 const verifyOTP = async (req, res) => {
   const { phoneNumber, otp } = req.body;
 
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const entry = otpStore.get(normalizedPhone);
 
-    const isVerified = await checkOTP(normalizedPhone, otp);
-    if (!isVerified) {
+    if (!entry) {
+      return res.status(400).json({ message: "OTP not found" });
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      otpStore.delete(normalizedPhone);
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    if (entry.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
+
+    otpStore.delete(normalizedPhone);
 
     const user = await User.findOne({ phoneNumber: normalizedPhone });
     if (!user) {
