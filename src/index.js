@@ -10,7 +10,7 @@ const allowedOrigins = [
   "https://sprightly-sawine-43e5c3.netlify.app",
   "https://chimerical-lebkuchen-58351a.netlify.app", 
   "https://www.pegebeya.com",
-  "https://admin.pegebeya.com/app/all-products"
+  "https://admin.pegebeya.com"
 ];
 
 // Middleware
