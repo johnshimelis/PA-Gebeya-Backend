@@ -1,4 +1,5 @@
 const multer = require("multer");
+const Category = require("../models/Category");
 
 const AWS = require("aws-sdk");
 const multerS3 = require("multer-s3");
