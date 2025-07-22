@@ -5,12 +5,19 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
+// Allowed origins
+const allowedOrigins = [
+  "https://sprightly-sawine-43e5c3.netlify.app",
+  "https://chimerical-lebkuchen-58351a.netlify.app", 
+  "https://www.pegebeya.com",
+  "https://admin.pegebeya.com/app/all-products"
+];
 
 // Middleware
 app.use(express.json());
 app.use(
   cors({
-    origin: "*", // Allow all domains
+    origin: allowedOrigins, // Allow all domains
     credentials: true, // Allow cookies and authentication headers
     methods: ["GET", "POST", "PUT", "DELETE"], // Allowed HTTP methods
     allowedHeaders: ["Content-Type", "Authorization"], // Allowed headers
