@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const upload = require("../middlewares/upload"); // <-- add this
+const upload = require("../middlewares/upload");
 
 const {
   uploadAd,
