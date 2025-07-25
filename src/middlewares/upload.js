@@ -31,7 +31,8 @@ const upload = multer({
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      const type = req.params.type || "ads";
+      // Changed from 'ads' to 'products' directory
+      const type = "products"; 
       const ext = path.extname(file.originalname);
       const fileName = `${type}/${Date.now()}${ext}`;
       cb(null, fileName);

@@ -1,47 +1,29 @@
 const express = require('express');
-const path = require('path');
-const app = express();
-const multer = require('multer');
 const mongoose = require('mongoose');
 const Product = require("../models/Product");
 const Category = require("../models/Category");
+const { Upload } = require("@aws-sdk/lib-storage");
+const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const multer = require('multer');
+const path = require('path');
 
-// Set up multer for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, 'uploads'));
+// Configure S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
 });
 
-const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 
-  'image/bmp', 'image/tiff', 'image/svg+xml', 'image/avif', 
-  'application/octet-stream']; // Add 'application/octet-stream' for AVIF fallback
+const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 
-const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.avif'];
+// Configure multer for memory storage (for S3 uploads)
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
-const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-
-  if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Unsupported file format: ${file.mimetype} (${ext})`), false);
-  }
-};
-
-const upload = multer({ storage, fileFilter });
-
-// Serve static files (images) from the 'uploads' directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Create a new product
+// Create a new product with S3 image upload
 exports.createProduct = async (req, res) => {
-  console.log("📝 Raw Request Body:", req.body);
-  console.log("📸 Uploaded File:", req.file);
-
   try {
     const {
       name,
@@ -52,6 +34,8 @@ exports.createProduct = async (req, res) => {
       category,
       discount,
       hasDiscount,
+      videoLink,
+      rating
     } = req.body;
 
     // Validation for required fields
@@ -65,7 +49,38 @@ exports.createProduct = async (req, res) => {
       return res.status(400).json({ message: "Invalid category ID" });
     }
 
-    // Create a new product with optional discount
+    // Handle image upload to S3
+    let imageUrl = null;
+    let imageKey = null;
+
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(async (file) => {
+        const fileKey = `products/${Date.now()}-${file.originalname}`;
+        
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: fileKey,
+            Body: file.buffer,
+            ContentType: file.mimetype,
+            ACL: 'public-read'
+          },
+        });
+
+        const result = await upload.done();
+        return {
+          url: result.Location,
+          key: result.Key
+        };
+      });
+
+      const uploadedImages = await Promise.all(uploadPromises);
+      imageUrl = uploadedImages[0].url;
+      imageKey = uploadedImages[0].key;
+    }
+
+    // Create a new product
     const newProduct = new Product({
       name: name.trim(),
       price,
@@ -73,19 +88,26 @@ exports.createProduct = async (req, res) => {
       fullDescription,
       stockQuantity,
       category,
-      image: req.file ? req.file.filename : null,
-      discount: hasDiscount === "true" ? discount : 0, // Only apply discount if `hasDiscount` is true
-      hasDiscount: hasDiscount === "true", // Convert to boolean
+      images: imageUrl ? [{ url: imageUrl, key: imageKey }] : [],
+      discount: hasDiscount === "true" ? discount : 0,
+      hasDiscount: hasDiscount === "true",
+      videoLink,
+      rating
     });
 
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Error creating product:", error);
+    res.status(500).json({ 
+      message: "Server error", 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
-// Update product with sold count and adjust stock
+// Update product
 exports.updateProduct = async (req, res) => {
   try {
     const {
@@ -97,7 +119,9 @@ exports.updateProduct = async (req, res) => {
       category,
       discount,
       hasDiscount,
-      sold, // User-provided sold count
+      sold,
+      videoLink,
+      rating
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -111,8 +135,10 @@ exports.updateProduct = async (req, res) => {
     if (fullDescription) updateData.fullDescription = fullDescription;
     if (discount !== undefined) updateData.discount = hasDiscount === "true" ? discount : 0;
     if (hasDiscount !== undefined) updateData.hasDiscount = hasDiscount === "true";
+    if (videoLink !== undefined) updateData.videoLink = videoLink;
+    if (rating !== undefined) updateData.rating = rating;
 
-    // ✅ Check if sold increased
+    // Handle sold count update
     if (sold !== undefined) {
       const newSold = Number(sold);
       if (newSold < product.sold) {
@@ -121,7 +147,6 @@ exports.updateProduct = async (req, res) => {
 
       const increaseInSold = newSold - product.sold;
       if (increaseInSold > 0) {
-        // ✅ Reduce stockQuantity accordingly
         const newStockQuantity = product.stockQuantity - increaseInSold;
         if (newStockQuantity < 0) {
           return res.status(400).json({ message: "Not enough stock available" });
@@ -132,35 +157,72 @@ exports.updateProduct = async (req, res) => {
       updateData.sold = newSold;
     }
 
-    // ✅ Allow stockQuantity to be updated only if provided
+    // Handle stock quantity update
     if (stockQuantity !== undefined) {
       updateData.stockQuantity = Number(stockQuantity);
     }
 
-    // Validate and update category
+    // Handle category update
     if (category) {
-      try {
-        const existingCategory = await Category.findById(category);
-        if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
-        updateData.category = category;
-      } catch (error) {
-        return res.status(400).json({ message: "Invalid category format" });
-      }
+      const existingCategory = await Category.findById(category);
+      if (!existingCategory) return res.status(400).json({ message: "Invalid category ID" });
+      updateData.category = category;
     }
 
     // Handle image upload
-    if (req.file) {
-      updateData.image = req.file.filename;
+    if (req.files && req.files.length > 0) {
+      // First delete old images from S3
+      if (product.images && product.images.length > 0) {
+        const deletePromises = product.images.map(image => {
+          const deleteParams = {
+            Bucket: BUCKET_NAME,
+            Key: image.key
+          };
+          return s3Client.send(new DeleteObjectCommand(deleteParams));
+        });
+        await Promise.all(deletePromises);
+      }
+
+      // Upload new images
+      const uploadPromises = req.files.map(async (file) => {
+        const fileKey = `products/${Date.now()}-${file.originalname}`;
+        
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: fileKey,
+            Body: file.buffer,
+            ContentType: file.mimetype,
+            ACL: 'public-read'
+          },
+        });
+
+        const result = await upload.done();
+        return {
+          url: result.Location,
+          key: result.Key
+        };
+      });
+
+      const uploadedImages = await Promise.all(uploadPromises);
+      updateData.images = uploadedImages;
     }
 
     // Update product
-    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
-    if (!updatedProduct) return res.status(404).json({ message: "Product not found" });
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true }
+    );
 
     res.json({ message: "Product updated successfully", product: updatedProduct });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Error updating product:", error);
+    res.status(500).json({ 
+      message: "Server error", 
+      error: error.message 
+    });
   }
 };
 
