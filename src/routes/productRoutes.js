@@ -24,6 +24,8 @@ router.get('/', getAllProducts);
 router.get('/:id', getProductById);
 router.get('/category/:categoryId', getProductsByCategory);
 router.get('/bestsellers', getBestSellers);
+// In your routes file
+router.get('/products/discounted', productController.getDiscountedProducts);
 router.get('/discounted', getDiscountedProducts);
 router.get('/non-discounted', getNonDiscountedProducts);
 router.delete('/:id', deleteProduct);
