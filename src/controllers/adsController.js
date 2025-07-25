@@ -1,55 +1,119 @@
 const Ad = require("../models/Ad");
+const AWS = require("aws-sdk");
+const multerS3 = require("multer-s3");
+const multer = require("multer");
+const path = require("path");
+
+// AWS S3 Config
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
+
+// Multer config for S3 uploads
+const upload = multer({
+  storage: multerS3({
+    s3,
+    bucket: process.env.AWS_BUCKET_NAME,
+    acl: "public-read",
+    metadata: (req, file, cb) => {
+      cb(null, { fieldName: file.fieldname });
+    },
+    key: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}${ext}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    file.mimetype.startsWith("image/")
+      ? cb(null, true)
+      : cb(new Error("Only image files are allowed!"), false);
+  },
+});
+
+// Helper to generate image URL
+const getImageUrl = (key) =>
+  key
+    ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`
+    : null;
 
 // Upload Ads, Banners, or Banner1
-exports.uploadAd = async (req, res) => {
+const uploadAd = async (req, res) => {
   try {
     const { type } = req.params;
     if (!["ads", "banner", "banner1"].includes(type)) {
       return res.status(400).json({ error: "Invalid type" });
     }
 
-    const imagePaths = req.files.map((file) => `uploads/${file.filename}`);
-    const ad = new Ad({ images: imagePaths, type });
+    const imageKeys = req.files.map((file) => file.key);
+    const ad = new Ad({ images: imageKeys, type });
     await ad.save();
 
-    res.json({ message: `${type} uploaded successfully!`, ad });
+    res.status(201).json({ message: `${type} uploaded successfully!`, ad });
   } catch (error) {
-    res.status(500).json({ error: "Failed to upload image." });
+    res.status(500).json({ error: "Failed to upload image.", details: error.message });
   }
 };
 
 // Fetch Ads, Banners, or Banner1
-exports.getAds = async (req, res) => {
+const getAds = async (req, res) => {
   try {
     const { type } = req.params;
     const ads = await Ad.find({ type });
-    res.json(ads);
+    const adsWithUrls = ads.map((ad) => ({
+      ...ad.toObject(),
+      images: ad.images.map(getImageUrl),
+    }));
+    res.status(200).json(adsWithUrls);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch ads." });
+    res.status(500).json({ error: "Failed to fetch ads.", details: error.message });
   }
 };
 
-// Delete an Ad, Banner, or Banner1
-exports.deleteAd = async (req, res) => {
+// Delete Ad
+const deleteAd = async (req, res) => {
   try {
-    await Ad.findByIdAndDelete(req.params.id);
-    res.json({ message: "Deleted successfully!" });
+    const ad = await Ad.findById(req.params.id);
+    if (!ad) return res.status(404).json({ message: "Ad not found" });
+
+    // Delete images from S3
+    for (const key of ad.images) {
+      await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }).promise();
+    }
+
+    await ad.deleteOne();
+    res.status(200).json({ message: "Deleted successfully!" });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete ad." });
+    res.status(500).json({ error: "Failed to delete ad.", details: error.message });
   }
 };
 
-// Update an Ad, Banner, or Banner1
-exports.updateAd = async (req, res) => {
+// Update Ad
+const updateAd = async (req, res) => {
   try {
-    const imagePaths = req.files.map((file) => `uploads/${file.filename}`);
-    const updatedAd = await Ad.findByIdAndUpdate(
-      req.params.id,
-      { images: imagePaths },
-      { new: true }
-    );
-    res.json({ message: "Updated successfully!", updatedAd });
+    const ad = await Ad.findById(req.params.id);
+    if (!ad) return res.status(404).json({ message: "Ad not found" });
+
+    // Delete old images
+    for (const key of ad.images) {
+      await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }).promise();
+    }
+
+    const newImageKeys = req.files.map((file) => file.key);
+    ad.images = newImageKeys;
+    const updatedAd = await ad.save();
+
+    res.status(200).json({ message: "Updated successfully!", updatedAd });
   } catch (error) {
-    res.status(500).json({ error: "Failed to update ad." });
+    res.status(500).json({ error: "Failed to update ad.", details: error.message });
   }
+};
+
+module.exports = {
+  uploadAd,
+  getAds,
+  deleteAd,
+  updateAd,
+  upload,
 };
