@@ -249,23 +249,37 @@ exports.getBestSellers = async (req, res) => {
 };
 
 // Get discounted products
+// In your productController.js
 exports.getDiscountedProducts = async (req, res) => {
   try {
+    // Ensure database connection is active
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error('Database connection not ready');
+    }
+
     const discountedProducts = await Product.find({
       hasDiscount: true,
-      discount: { $gt: 0 },
-    }).populate('category', 'name');
+      discount: { $gt: 0 }
+    })
+    .populate('category', 'name')
+    .lean(); // Convert to plain JS objects
 
-    res.json(discountedProducts);
+    // Transform products to include imageUrls
+    const transformedProducts = discountedProducts.map(product => ({
+      ...product,
+      imageUrls: product.images?.map(img => img.url) || []
+    }));
+
+    res.json(transformedProducts);
   } catch (error) {
-    console.error('Get Discounted Products Error:', error);
+    console.error('Error in getDiscountedProducts:', error);
     res.status(500).json({ 
-      message: 'Server error', 
-      error: error.message 
+      message: 'Server error',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
-
 // Get non-discounted products
 exports.getNonDiscountedProducts = async (req, res) => {
   try {
