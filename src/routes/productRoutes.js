@@ -1,6 +1,7 @@
 const express = require("express");
+
+const upload = require("../middlewares/upload");
 const productController = require("../controllers/productController");
-const upload = require("../middlewares/upload"); // Using your S3 upload middleware
 
 const router = express.Router();
 
