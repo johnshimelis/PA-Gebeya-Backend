@@ -1,17 +1,13 @@
-const { Upload } = require("@aws-sdk/lib-storage");
-const { S3Client } = require("@aws-sdk/client-s3");
+const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const s3Client = require("../utils/s3Client");
 const Ad = require("../models/Ad");
 
 const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
-const REGION = process.env.AWS_REGION;
 
-const s3Client = new S3Client({
-  region: REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+// Helper function to generate public URL
+const getPublicUrl = (key) => {
+  return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+};
 
 // Upload new ad
 const uploadAd = async (req, res) => {
@@ -26,37 +22,26 @@ const uploadAd = async (req, res) => {
       return res.status(400).json({ error: "No images uploaded." });
     }
 
-    const uploadPromises = req.files.map(async (file) => {
-      const fileKey = `${type}/${Date.now()}-${file.originalname}`;
-
-      const parallelUpload = new Upload({
-        client: s3Client,
-        params: {
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-          Body: file.buffer, // upload from buffer (memory)
-          ContentType: file.mimetype,
-        },
-      });
-
-      await parallelUpload.done();
-      return fileKey;
-    });
-
-    const imageKeys = await Promise.all(uploadPromises);
+    const images = req.files.map(file => ({
+      url: file.location,
+      key: file.key
+    }));
 
     const ad = await Ad.create({
       type,
-      images: imageKeys,
+      images
     });
 
     res.status(201).json({
       message: `${type} uploaded successfully`,
-      ad,
+      ad
     });
   } catch (error) {
     console.error("Upload Error:", error);
-    res.status(500).json({ error: "Failed to upload ad", details: error.message });
+    res.status(500).json({ 
+      error: "Failed to upload ad", 
+      details: error.message 
+    });
   }
 };
 
@@ -64,10 +49,14 @@ const uploadAd = async (req, res) => {
 const getAds = async (req, res) => {
   try {
     const { type } = req.params;
-    const ads = await Ad.find({ type });
+    const ads = await Ad.find({ type }).sort({ createdAt: -1 });
+    
     res.status(200).json(ads);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch ads" });
+    res.status(500).json({ 
+      error: "Failed to fetch ads",
+      details: error.message
+    });
   }
 };
 
@@ -75,13 +64,31 @@ const getAds = async (req, res) => {
 const deleteAd = async (req, res) => {
   try {
     const { id } = req.params;
-    const ad = await Ad.findByIdAndDelete(id);
+    const ad = await Ad.findById(id);
+    
     if (!ad) {
       return res.status(404).json({ error: "Ad not found" });
     }
+
+    // Delete all images from S3
+    const deletePromises = ad.images.map(image => {
+      const deleteParams = {
+        Bucket: BUCKET_NAME,
+        Key: image.key
+      };
+      return s3Client.send(new DeleteObjectCommand(deleteParams));
+    });
+
+    await Promise.all(deletePromises);
+    await Ad.findByIdAndDelete(id);
+
     res.status(200).json({ message: "Ad deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete ad" });
+    console.error("Delete Error:", error);
+    res.status(500).json({ 
+      error: "Failed to delete ad",
+      details: error.message
+    });
   }
 };
 
@@ -89,43 +96,43 @@ const deleteAd = async (req, res) => {
 const updateAd = async (req, res) => {
   try {
     const { id } = req.params;
-
     const ad = await Ad.findById(id);
+    
     if (!ad) {
       return res.status(404).json({ error: "Ad not found" });
     }
 
-    let updatedImages = ad.images;
-
+    // Delete old images from S3 if new ones are uploaded
     if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map(async (file) => {
-        const fileKey = `${ad.type}/${Date.now()}-${file.originalname}`;
-
-        const parallelUpload = new Upload({
-          client: s3Client,
-          params: {
-            Bucket: BUCKET_NAME,
-            Key: fileKey,
-            Body: file.buffer,
-            ContentType: file.mimetype,
-          },
-        });
-
-        await parallelUpload.done();
-        return fileKey;
+      const deletePromises = ad.images.map(image => {
+        const deleteParams = {
+          Bucket: BUCKET_NAME,
+          Key: image.key
+        };
+        return s3Client.send(new DeleteObjectCommand(deleteParams));
       });
 
-      const newImageKeys = await Promise.all(uploadPromises);
-      updatedImages = newImageKeys;
+      await Promise.all(deletePromises);
+
+      // Add new images
+      ad.images = req.files.map(file => ({
+        url: file.location,
+        key: file.key
+      }));
+      
+      await ad.save();
     }
 
-    ad.images = updatedImages;
-    await ad.save();
-
-    res.status(200).json({ message: "Ad updated successfully", ad });
+    res.status(200).json({ 
+      message: "Ad updated successfully", 
+      ad 
+    });
   } catch (error) {
     console.error("Update Error:", error);
-    res.status(500).json({ error: "Failed to update ad", details: error.message });
+    res.status(500).json({ 
+      error: "Failed to update ad", 
+      details: error.message 
+    });
   }
 };
 
