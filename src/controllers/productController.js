@@ -230,39 +230,21 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-// Get top 5 best-selling products
-exports.getBestSellers = async (req, res) => {
-  try {
-    const bestSellers = await Product.find()
-      .sort({ sold: -1 })
-      .limit(5)
-      .populate('category', 'name');
-
-    res.json(bestSellers);
-  } catch (error) {
-    console.error('Get Best Sellers Error:', error);
-    res.status(500).json({ 
-      message: 'Server error', 
-      error: error.message 
-    });
-  }
-};
-
-// Get discounted products
-// In your productController.js
 exports.getDiscountedProducts = async (req, res) => {
   try {
-    // Ensure database connection is active
-    if (mongoose.connection.readyState !== 1) {
-      throw new Error('Database connection not ready');
-    }
-
     const discountedProducts = await Product.find({
-      hasDiscount: true,
-      discount: { $gt: 0 }
+      $or: [
+        { hasDiscount: true },
+        { discount: { $gt: 0 } }
+      ]
     })
     .populate('category', 'name')
-    .lean(); // Convert to plain JS objects
+    .lean();
+
+    // If no discounted products found, return empty array instead of error
+    if (!discountedProducts || discountedProducts.length === 0) {
+      return res.json([]);
+    }
 
     // Transform products to include imageUrls
     const transformedProducts = discountedProducts.map(product => ({
@@ -275,11 +257,35 @@ exports.getDiscountedProducts = async (req, res) => {
     console.error('Error in getDiscountedProducts:', error);
     res.status(500).json({ 
       message: 'Server error',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
+
+// Get best sellers (updated with better empty state handling)
+exports.getBestSellers = async (req, res) => {
+  try {
+    const bestSellers = await Product.find()
+      .sort({ sold: -1 })
+      .limit(5)
+      .populate('category', 'name');
+
+    // If no products exist or all have sold=0, return empty array
+    if (!bestSellers || bestSellers.length === 0 || bestSellers.every(p => p.sold === 0)) {
+      return res.json([]);
+    }
+
+    res.json(bestSellers);
+  } catch (error) {
+    console.error('Get Best Sellers Error:', error);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+
 // Get non-discounted products
 exports.getNonDiscountedProducts = async (req, res) => {
   try {
