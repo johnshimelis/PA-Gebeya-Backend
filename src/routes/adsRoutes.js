@@ -1,19 +1,17 @@
 const express = require("express");
-const multer = require("multer");
 const router = express.Router();
-const adsController = require("../controllers/adsController");
+const {
+  uploadAd,
+  getAds,
+  deleteAd,
+  updateAd,
+  upload, // Multer-S3 middleware
+} = require("../controllers/adsController");
 
-// Multer Configuration
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
-
-// Routes
-router.post("/:type", upload.array("images", 5), adsController.uploadAd);
-router.get("/:type", adsController.getAds);
-router.delete("/:id", adsController.deleteAd);
-router.put("/:id", upload.array("images", 5), adsController.updateAd);
+// Ads Routes
+router.post("/:type", upload.array("images", 5), uploadAd);     // Upload new ad
+router.get("/:type", getAds);                                   // Fetch ads of a specific type
+router.delete("/:id", deleteAd);                                // Delete ad and images
+router.put("/:id", upload.array("images", 5), updateAd);        // Update ad with new images
 
 module.exports = router;
