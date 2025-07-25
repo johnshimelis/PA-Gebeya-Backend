@@ -9,7 +9,9 @@ const {
   updateAd,
 } = require("../controllers/adsController");
 
+// Upload ads: max 5 images per request, field name "images"
 router.post("/:type", upload.array("images", 5), uploadAd);
+
 router.get("/:type", getAds);
 router.delete("/:id", deleteAd);
 router.put("/:id", upload.array("images", 5), updateAd);

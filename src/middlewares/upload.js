@@ -15,14 +15,15 @@ const upload = multer({
   storage: multerS3({
     s3,
     bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read",
+    acl: "public-read", // public access so images can be read via URL
     contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req, file, cb) => {
-      const fileName = `ads/${Date.now()}-${file.originalname}`;
+      const type = req.params.type || "ads";
+      const fileName = `${type}/${Date.now()}-${file.originalname}`;
       cb(null, fileName);
     },
   }),
-  limits: { fileSize: 5 * 1024 * 1024 }, // Optional: 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
 });
 
 module.exports = upload;
