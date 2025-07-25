@@ -167,14 +167,7 @@ exports.updateProduct = async (req, res) => {
 exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find().populate('category', 'name');
-    
-    // Transform the products to include imageUrls array
-    const transformedProducts = products.map(product => ({
-      ...product.toObject(),
-      imageUrls: product.images.map(img => img.url)
-    }));
-    
-    res.json(transformedProducts);
+    res.json(products);
   } catch (error) {
     console.error('Get All Products Error:', error);
     res.status(500).json({ 
