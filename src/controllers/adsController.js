@@ -1,10 +1,17 @@
-const fs = require("fs");
-const path = require("path");
 const { Upload } = require("@aws-sdk/lib-storage");
-const s3Client = require("../utils/s3Client");
+const { S3Client } = require("@aws-sdk/client-s3");
 const Ad = require("../models/Ad");
 
 const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
+const REGION = process.env.AWS_REGION;
+
+const s3Client = new S3Client({
+  region: REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 // Upload new ad
 const uploadAd = async (req, res) => {
@@ -20,25 +27,20 @@ const uploadAd = async (req, res) => {
     }
 
     const uploadPromises = req.files.map(async (file) => {
-      const fileStream = fs.createReadStream(file.path);
       const fileKey = `${type}/${Date.now()}-${file.originalname}`;
 
-      const upload = new Upload({
+      const parallelUpload = new Upload({
         client: s3Client,
         params: {
           Bucket: BUCKET_NAME,
           Key: fileKey,
-          Body: fileStream,
+          Body: file.buffer, // upload from buffer (memory)
           ContentType: file.mimetype,
         },
       });
 
-      const result = await upload.done();
-
-      // Clean up local file
-      fs.unlinkSync(file.path);
-
-      return result.Key;
+      await parallelUpload.done();
+      return fileKey;
     });
 
     const imageKeys = await Promise.all(uploadPromises);
@@ -97,22 +99,20 @@ const updateAd = async (req, res) => {
 
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(async (file) => {
-        const fileStream = fs.createReadStream(file.path);
         const fileKey = `${ad.type}/${Date.now()}-${file.originalname}`;
 
-        const upload = new Upload({
+        const parallelUpload = new Upload({
           client: s3Client,
           params: {
             Bucket: BUCKET_NAME,
             Key: fileKey,
-            Body: fileStream,
+            Body: file.buffer,
             ContentType: file.mimetype,
           },
         });
 
-        const result = await upload.done();
-        fs.unlinkSync(file.path);
-        return result.Key;
+        await parallelUpload.done();
+        return fileKey;
       });
 
       const newImageKeys = await Promise.all(uploadPromises);
