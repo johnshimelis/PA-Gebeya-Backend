@@ -1,52 +1,69 @@
+const { S3Client } = require("@aws-sdk/client-s3");
+const { Upload } = require("@aws-sdk/lib-storage");
 const multer = require("multer");
-
-const AWS = require("aws-sdk");
-const multerS3 = require("multer-s3");
 const path = require("path");
+const Category = require("../models/Category"); // Adjust path if needed
 
-// Configure AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// AWS S3 client using SDK v3
+const s3Client = new S3Client({
   region: process.env.AWS_REGION,
-});
-
-// Multer configuration for S3
-const upload = multer({
-  storage: multerS3({
-    s3,
-    bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read", // Make files publicly accessible
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      const fileName = `${Date.now()}${ext}`;
-      cb(null, fileName);
-    },
-  }),
-  fileFilter: (req, file, cb) => {
-    file.mimetype.startsWith("image/") ? cb(null, true) : cb(new Error("Only image files are allowed!"), false);
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
-// Helper function to get full image URL
-const getImageUrl = (imageName) =>
-  imageName ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageName}` : null;
+// Multer setup to read file into memory
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image files are allowed!"), false);
+  },
+});
 
-// Create a new category
+// Upload image to S3
+const uploadToS3 = async (file) => {
+  const ext = path.extname(file.originalname);
+  const fileName = `${Date.now()}${ext}`;
+  const upload = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: fileName,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: "public-read",
+    },
+  });
+
+  const result = await upload.done();
+  return { key: fileName, url: result.Location };
+};
+
+// Construct image URL
+const getImageUrl = (key) =>
+  key
+    ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`
+    : null;
+
+// Create category
 const createCategory = async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Category name is required" });
 
-    const imageKey = req.file ? req.file.key : null;
-    const newCategory = await Category.create({ name, image: imageKey });
+    let imageKey = null;
+    if (req.file) {
+      const uploadResult = await uploadToS3(req.file);
+      imageKey = uploadResult.key;
+    }
 
-    res.status(201).json({ message: "Category created successfully", category: newCategory });
+    const newCategory = await Category.create({ name, image: imageKey });
+    res.status(201).json({ message: "Category created", category: newCategory });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Upload error", error: error.message });
   }
 };
 
@@ -55,63 +72,70 @@ const getCategories = async (req, res) => {
   try {
     const categories = await Category.find();
     res.status(200).json(
-      categories.map((category) => ({ ...category.toObject(), image: getImageUrl(category.image) }))
+      categories.map((c) => ({
+        ...c.toObject(),
+        image: getImageUrl(c.image),
+      }))
     );
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Get a single category by ID
+// Get one category
 const getCategoryById = async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
-    if (!category) return res.status(404).json({ message: "Category not found" });
+    if (!category) return res.status(404).json({ message: "Not found" });
 
-    res.status(200).json({ ...category.toObject(), image: getImageUrl(category.image) });
+    res.status(200).json({
+      ...category.toObject(),
+      image: getImageUrl(category.image),
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// Update a category
+// Update category
 const updateCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    const updateData = { name };
+    const category = await Category.findById(req.params.id);
+    if (!category) return res.status(404).json({ message: "Not found" });
+
     if (req.file) {
-      // Delete the old image from S3 if it exists
-      const oldCategory = await Category.findById(req.params.id);
-      if (oldCategory.image) {
-        await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: oldCategory.image }).promise();
-      }
-      updateData.image = req.file.key;
+      const uploadResult = await uploadToS3(req.file);
+      category.image = uploadResult.key;
     }
 
-    const updatedCategory = await Category.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
-    if (!updatedCategory) return res.status(404).json({ message: "Category not found" });
+    category.name = name || category.name;
+    await category.save();
 
-    res.status(200).json({ message: "Category updated successfully", category: updatedCategory });
+    res.status(200).json({ message: "Category updated", category });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Update error", error: error.message });
   }
 };
 
-// Delete a category
+// Delete category
 const deleteCategory = async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
-    if (!category) return res.status(404).json({ message: "Category not found" });
+    if (!category) return res.status(404).json({ message: "Not found" });
 
+    // Delete image from S3 if it exists
     if (category.image) {
-      // Delete the image from S3
-      await s3.deleteObject({ Bucket: process.env.AWS_BUCKET_NAME, Key: category.image }).promise();
+      await s3Client.send({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: category.image,
+      });
     }
 
     await category.deleteOne();
-    res.status(200).json({ message: "Category deleted successfully" });
+    res.status(200).json({ message: "Deleted successfully" });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Delete error", error: error.message });
   }
 };
 
@@ -121,5 +145,5 @@ module.exports = {
   getCategoryById,
   updateCategory,
   deleteCategory,
-  upload,
+  upload, // export multer middleware
 };
