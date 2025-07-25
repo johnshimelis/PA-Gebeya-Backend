@@ -1,123 +1,130 @@
-const Ad = require("../models/Ad");
-const AWS = require("aws-sdk");
-const multer = require("multer");
-const multerS3 = require("multer-s3");
+const fs = require("fs");
 const path = require("path");
+const { Upload } = require("@aws-sdk/lib-storage");
+const s3Client = require("../utils/s3Client");
+const Ad = require("../models/Ad");
 
-// AWS S3 Configuration
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION,
-});
+const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 
-// Multer S3 storage configuration
-const upload = multer({
-  storage: multerS3({
-    s3,
-    bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read",
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      const filename = `${Date.now()}${ext}`;
-      cb(null, filename);
-    },
-  }),
-  fileFilter: (req, file, cb) => {
-    file.mimetype.startsWith("image/")
-      ? cb(null, true)
-      : cb(new Error("Only image files are allowed!"), false);
-  },
-});
-
-// Helper to generate full S3 URL
-const getImageUrl = (key) =>
-  key
-    ? `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`
-    : null;
-
-// Upload Ads, Banners, or Banner1
+// Upload new ad
 const uploadAd = async (req, res) => {
   try {
     const { type } = req.params;
+
     if (!["ads", "banner", "banner1"].includes(type)) {
-      return res.status(400).json({ error: "Invalid type" });
+      return res.status(400).json({ error: "Invalid ad type." });
     }
 
-    const imageKeys = req.files.map((file) => file.key);
-    const ad = await Ad.create({ type, images: imageKeys });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No images uploaded." });
+    }
+
+    const uploadPromises = req.files.map(async (file) => {
+      const fileStream = fs.createReadStream(file.path);
+      const fileKey = `${type}/${Date.now()}-${file.originalname}`;
+
+      const upload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+          Body: fileStream,
+          ContentType: file.mimetype,
+        },
+      });
+
+      const result = await upload.done();
+
+      // Clean up local file
+      fs.unlinkSync(file.path);
+
+      return result.Key;
+    });
+
+    const imageKeys = await Promise.all(uploadPromises);
+
+    const ad = await Ad.create({
+      type,
+      images: imageKeys,
+    });
 
     res.status(201).json({
-      message: `${type} uploaded successfully!`,
+      message: `${type} uploaded successfully`,
       ad,
     });
   } catch (error) {
-    res.status(500).json({ error: "Failed to upload images", details: error.message });
+    console.error("Upload Error:", error);
+    res.status(500).json({ error: "Failed to upload ad", details: error.message });
   }
 };
 
-// Fetch Ads, Banners, or Banner1
+// Get all ads by type
 const getAds = async (req, res) => {
   try {
     const { type } = req.params;
     const ads = await Ad.find({ type });
-    const adsWithUrls = ads.map((ad) => ({
-      ...ad.toObject(),
-      images: ad.images.map(getImageUrl),
-    }));
-    res.status(200).json(adsWithUrls);
+    res.status(200).json(ads);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch ads", details: error.message });
+    res.status(500).json({ error: "Failed to fetch ads" });
   }
 };
 
-// Delete Ad
+// Delete ad by ID
 const deleteAd = async (req, res) => {
   try {
-    const ad = await Ad.findById(req.params.id);
-    if (!ad) return res.status(404).json({ message: "Ad not found" });
-
-    // Delete images from S3
-    for (const key of ad.images) {
-      await s3.deleteObject({
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: key,
-      }).promise();
+    const { id } = req.params;
+    const ad = await Ad.findByIdAndDelete(id);
+    if (!ad) {
+      return res.status(404).json({ error: "Ad not found" });
     }
-
-    await ad.deleteOne();
-    res.status(200).json({ message: "Deleted successfully" });
+    res.status(200).json({ message: "Ad deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Failed to delete ad", details: error.message });
+    res.status(500).json({ error: "Failed to delete ad" });
   }
 };
 
-// Update Ad
+// Update ad with new images
 const updateAd = async (req, res) => {
   try {
-    const ad = await Ad.findById(req.params.id);
-    if (!ad) return res.status(404).json({ message: "Ad not found" });
+    const { id } = req.params;
 
-    // Delete old images from S3
-    for (const key of ad.images) {
-      await s3.deleteObject({
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: key,
-      }).promise();
+    const ad = await Ad.findById(id);
+    if (!ad) {
+      return res.status(404).json({ error: "Ad not found" });
     }
 
-    const newImageKeys = req.files.map((file) => file.key);
-    ad.images = newImageKeys;
-    const updatedAd = await ad.save();
+    let updatedImages = ad.images;
 
-    res.status(200).json({
-      message: "Updated successfully",
-      ad: updatedAd,
-    });
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(async (file) => {
+        const fileStream = fs.createReadStream(file.path);
+        const fileKey = `${ad.type}/${Date.now()}-${file.originalname}`;
+
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: fileKey,
+            Body: fileStream,
+            ContentType: file.mimetype,
+          },
+        });
+
+        const result = await upload.done();
+        fs.unlinkSync(file.path);
+        return result.Key;
+      });
+
+      const newImageKeys = await Promise.all(uploadPromises);
+      updatedImages = newImageKeys;
+    }
+
+    ad.images = updatedImages;
+    await ad.save();
+
+    res.status(200).json({ message: "Ad updated successfully", ad });
   } catch (error) {
+    console.error("Update Error:", error);
     res.status(500).json({ error: "Failed to update ad", details: error.message });
   }
 };
@@ -127,5 +134,4 @@ module.exports = {
   getAds,
   deleteAd,
   updateAd,
-  upload, // Export multer upload for routes
 };
