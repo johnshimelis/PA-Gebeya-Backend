@@ -1,4 +1,10 @@
+const fs = require("fs");
+const path = require("path");
+const { Upload } = require("@aws-sdk/lib-storage");
+const s3Client = require("../utils/s3Client");
 const Ad = require("../models/Ad");
+
+const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 
 // Upload new ad
 const uploadAd = async (req, res) => {
@@ -13,8 +19,29 @@ const uploadAd = async (req, res) => {
       return res.status(400).json({ error: "No images uploaded." });
     }
 
-    // Extract the S3 keys or URLs from uploaded files
-    const imageKeys = req.files.map(file => file.key); // or file.location for URLs
+    const uploadPromises = req.files.map(async (file) => {
+      const fileStream = fs.createReadStream(file.path);
+      const fileKey = `${type}/${Date.now()}-${file.originalname}`;
+
+      const upload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+          Body: fileStream,
+          ContentType: file.mimetype,
+        },
+      });
+
+      const result = await upload.done();
+
+      // Clean up local file
+      fs.unlinkSync(file.path);
+
+      return result.Key;
+    });
+
+    const imageKeys = await Promise.all(uploadPromises);
 
     const ad = await Ad.create({
       type,
@@ -69,7 +96,26 @@ const updateAd = async (req, res) => {
     let updatedImages = ad.images;
 
     if (req.files && req.files.length > 0) {
-      const newImageKeys = req.files.map(file => file.key);
+      const uploadPromises = req.files.map(async (file) => {
+        const fileStream = fs.createReadStream(file.path);
+        const fileKey = `${ad.type}/${Date.now()}-${file.originalname}`;
+
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: fileKey,
+            Body: fileStream,
+            ContentType: file.mimetype,
+          },
+        });
+
+        const result = await upload.done();
+        fs.unlinkSync(file.path);
+        return result.Key;
+      });
+
+      const newImageKeys = await Promise.all(uploadPromises);
       updatedImages = newImageKeys;
     }
 
