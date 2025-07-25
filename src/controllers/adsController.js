@@ -4,11 +4,6 @@ const Ad = require("../models/Ad");
 
 const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 
-// Helper function to generate public URL
-const getPublicUrl = (key) => {
-  return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
-};
-
 // Upload new ad
 const uploadAd = async (req, res) => {
   try {
@@ -22,9 +17,10 @@ const uploadAd = async (req, res) => {
       return res.status(400).json({ error: "No images uploaded." });
     }
 
+    // Files are already uploaded to S3 by multer-s3, just save the references
     const images = req.files.map(file => ({
-      url: file.location,
-      key: file.key
+      url: file.location,  // Public URL from S3
+      key: file.key        // S3 object key
     }));
 
     const ad = await Ad.create({
@@ -102,8 +98,9 @@ const updateAd = async (req, res) => {
       return res.status(404).json({ error: "Ad not found" });
     }
 
-    // Delete old images from S3 if new ones are uploaded
+    // If new files were uploaded
     if (req.files && req.files.length > 0) {
+      // First delete old images from S3
       const deletePromises = ad.images.map(image => {
         const deleteParams = {
           Bucket: BUCKET_NAME,
@@ -114,7 +111,7 @@ const updateAd = async (req, res) => {
 
       await Promise.all(deletePromises);
 
-      // Add new images
+      // Then save new images
       ad.images = req.files.map(file => ({
         url: file.location,
         key: file.key
