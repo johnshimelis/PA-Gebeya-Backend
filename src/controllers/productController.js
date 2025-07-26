@@ -284,6 +284,7 @@ exports.getBestSellers = async (req, res) => {
     });
   }
 };
+//
 
 
 // Get non-discounted products
