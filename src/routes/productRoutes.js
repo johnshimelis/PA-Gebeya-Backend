@@ -15,29 +15,25 @@ const {
   removeProductImage
 } = require('../controllers/productController');
 
-// Create product with multiple images
+// Product Creation & Update (with images)
 router.post('/', arrayUpload, createProduct);
-
-// Update product with multiple images (replaces all existing images)
 router.put('/:id', arrayUpload, updateProduct);
 
-// Add images to existing product (without replacing existing ones)
-router.post('/:id/images', arrayUpload, addProductImages);
+// Special Product Routes (must come before :id route)
+router.get('/bestsellers', getBestSellers);
+router.get('/discounted', getDiscountedProducts);
+router.get('/non-discounted', getNonDiscountedProducts);
 
-// Product information routes
+// Product Information Routes
 router.get('/', getAllProducts);
-router.get('/:id', getProductById);
 router.get('/category/:categoryId', getProductsByCategory);
+router.get('/:id', getProductById);  // Keep this LAST
 
-// Special product routes
-router.get('/features/bestsellers', getBestSellers);
-router.get('/features/discounted', getDiscountedProducts);
-router.get('/features/non-discounted', getNonDiscountedProducts);
-
-// Image management routes
+// Image Management Routes
+router.post('/:id/images', arrayUpload, addProductImages);
 router.delete('/:productId/images/:imageKey', removeProductImage);
 
-// Product deletion
+// Product Deletion
 router.delete('/:id', deleteProduct);
 
 module.exports = router;

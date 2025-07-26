@@ -241,18 +241,7 @@ exports.getDiscountedProducts = async (req, res) => {
     .populate('category', 'name')
     .lean();
 
-    // If no discounted products found, return empty array instead of error
-    if (!discountedProducts || discountedProducts.length === 0) {
-      return res.json([]);
-    }
-
-    // Transform products to include imageUrls
-    const transformedProducts = discountedProducts.map(product => ({
-      ...product,
-      imageUrls: product.images?.map(img => img.url) || []
-    }));
-
-    res.json(transformedProducts);
+    res.json(discountedProducts || []);
   } catch (error) {
     console.error('Error in getDiscountedProducts:', error);
     res.status(500).json({ 
@@ -261,7 +250,6 @@ exports.getDiscountedProducts = async (req, res) => {
     });
   }
 };
-
 // Get best sellers (updated with better empty state handling)
 exports.getBestSellers = async (req, res) => {
   try {
