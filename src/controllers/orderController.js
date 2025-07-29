@@ -1,16 +1,10 @@
 const Order = require("../models/Order");
-const Product = require("../models/Product"); // ✅ Import Product Model
+const Product = require("../models/Product");
 const multer = require("multer");
+const { uploadToS3 } = require("../utils/s3Uploader"); // Import your S3 upload utility
 
-// ✅ Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
+// Use memory storage for S3 uploads
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // ✅ Create New Order
@@ -31,31 +25,40 @@ exports.createOrder = async (req, res) => {
     const deliveryAddress = cleanedBody.deliveryAddress || "";
     const status = cleanedBody.status || "Pending";
 
-    const avatar = req.files["avatar"]
-      ? `/uploads/${req.files["avatar"][0].filename}`
-      : "/uploads/default-avatar.png";
+    // Default avatar (can be updated to use S3 if needed)
+    const avatar = "/uploads/default-avatar.png";
 
-    console.log("🖼️ Avatar Path Saved:", avatar);
-
-    const paymentImage = req.files["paymentImage"]
-      ? `/uploads/${req.files["paymentImage"][0].filename}`
-      : null;
+    // Handle payment image upload to S3
+    let paymentImageUrl = null;
+    if (req.files["paymentImage"]) {
+      const paymentImageFile = req.files["paymentImage"][0];
+      try {
+        // Upload to S3 with the same logic as product images
+        const s3Response = await uploadToS3({
+          fileBuffer: paymentImageFile.buffer,
+          fileName: `payment-${Date.now()}-${paymentImageFile.originalname}`,
+          fileType: paymentImageFile.mimetype,
+          folder: "payments" // Different folder than products
+        });
+        paymentImageUrl = s3Response.Location;
+        console.log("🖼️ Payment Image uploaded to S3:", paymentImageUrl);
+      } catch (s3Error) {
+        console.error("❌ S3 Upload Error:", s3Error);
+        return res.status(500).json({ error: "Failed to upload payment image to S3" });
+      }
+    }
 
     let orderDetails = [];
     if (cleanedBody.orderDetails) {
       try {
         orderDetails = JSON.parse(cleanedBody.orderDetails);
-
-        // ✅ FIX: Use productImage URLs directly from request
         orderDetails = orderDetails.map(item => ({
           productId: item.productId,
           product: item.product,
           quantity: item.quantity || 1,
           price: item.price || 0,
-          productImage: item.productImage || null, // Use URL from frontend
+          productImage: item.productImage || null,
         }));
-
-        console.log("✅ Final Order Details before saving:", orderDetails);
       } catch (error) {
         return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
       }
@@ -73,7 +76,7 @@ exports.createOrder = async (req, res) => {
       phoneNumber,
       deliveryAddress,
       avatar,
-      paymentImage,
+      paymentImage: paymentImageUrl, // This will now be the S3 URL
       orderDetails,
       createdAt: new Date(),
     });
@@ -86,31 +89,43 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
+// ... rest of your controller methods ...
+// ✅ Update Order
 exports.updateOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
 
-    console.log("🔄 Updating Order:", updates);
+    // Handle payment image update to S3
+    if (req.files && req.files["paymentImage"]) {
+      const paymentImageFile = req.files["paymentImage"][0];
+      try {
+        const s3Response = await uploadFileToS3({
+          file: paymentImageFile,
+          folder: "payments",
+        });
+        updates.paymentImage = s3Response.Location;
+      } catch (error) {
+        console.error("❌ Payment Image S3 Upload Error:", error);
+        return res.status(500).json({ error: "Failed to upload payment image" });
+      }
+    }
 
-    const order = await Order.findOneAndUpdate({ id: parseInt(id) }, updates, { new: true });
+    const order = await Order.findOneAndUpdate({ id: parseInt(id) }, updates, {
+      new: true,
+    });
 
     if (!order) {
       return res.status(404).json({ error: "Order not found!" });
     }
 
-    // ✅ If status is "Delivered", update product stock & sold values
     if (updates.status === "Delivered") {
       for (const item of order.orderDetails) {
         const product = await Product.findById(item.productId);
-
         if (product) {
           product.sold += item.quantity;
           product.stockQuantity -= item.quantity;
           await product.save();
-        } else {
-          console.error(`❌ Product not found for ID: ${item.productId}`);
         }
       }
     }
@@ -121,6 +136,8 @@ exports.updateOrder = async (req, res) => {
     res.status(500).json({ error: "Failed to update order." });
   }
 };
+
+// ... rest of the controller remains the same ...
 
 // ✅ Get all Orders
 exports.getOrders = async (req, res) => {

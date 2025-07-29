@@ -3,27 +3,27 @@ const router = express.Router();
 const orderController = require("../controllers/orderController");
 const multer = require("multer");
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
+// Use memory storage for S3 uploads
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Use correct file handling
 router.post(
   "/",
   upload.fields([
-    { name: "avatar", maxCount: 1 },  // ✅ Fix: Add avatar field
-    { name: "paymentImage", maxCount: 1 },
-    { name: "productImages", maxCount: 10 },
+    { name: "paymentImage", maxCount: 1 }
   ]),
   orderController.createOrder
 );
+
+// ... rest of your routes ...
+
+router.put(
+  "/:id",
+  upload.fields([{ name: "paymentImage", maxCount: 1 }]),
+  orderController.updateOrder
+);
+
+// ... rest of the routes remain the same ...
 router.get("/:orderId/:userId", orderController.getOrderByOrderIdAndUserId);
 
 
