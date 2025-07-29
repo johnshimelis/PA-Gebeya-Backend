@@ -1,85 +1,60 @@
 const Order = require("../models/Order");
-const Product = require("../models/Product"); // ✅ Import Product Model
-const multer = require("multer");
+const Product = require("../models/Product");
 
-// ✅ Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-const upload = multer({ storage });
-
-// ✅ Create New Order
+// ✅ Create New Order (S3 version)
 exports.createOrder = async (req, res) => {
   try {
-    const cleanedBody = {};
-    Object.keys(req.body).forEach((key) => {
-      cleanedBody[key.trim()] = req.body[key];
-    });
+    // Directly access the JSON body
+    const { 
+      userId, 
+      name, 
+      amount, 
+      status, 
+      phoneNumber, 
+      deliveryAddress, 
+      orderDetails, 
+      paymentImage // S3 URL
+    } = req.body;
 
-    console.log("📌 Cleaned Request Body:", cleanedBody);
-    console.log("📌 Uploaded Files:", req.files);
+    console.log("📦 Received order data:", req.body);
 
-    const userId = cleanedBody.userId || "Unknown ID";
-    const name = cleanedBody.name || "Unknown";
-    const amount = cleanedBody.amount ? parseFloat(cleanedBody.amount) : 0;
-    const phoneNumber = cleanedBody.phoneNumber || "";
-    const deliveryAddress = cleanedBody.deliveryAddress || "";
-    const status = cleanedBody.status || "Pending";
-
-    const avatar = req.files["avatar"]
-      ? `/uploads/${req.files["avatar"][0].filename}`
-      : "/uploads/default-avatar.png";
-
-    console.log("🖼️ Avatar Path Saved:", avatar);
-
-    const paymentImage = req.files["paymentImage"]
-      ? `/uploads/${req.files["paymentImage"][0].filename}`
-      : null;
-
-    let orderDetails = [];
-    if (cleanedBody.orderDetails) {
-      try {
-        orderDetails = JSON.parse(cleanedBody.orderDetails);
-
-        // ✅ FIX: Use productImage URLs directly from request
-        orderDetails = orderDetails.map(item => ({
-          productId: item.productId,
-          product: item.product,
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          productImage: item.productImage || null, // Use URL from frontend
-        }));
-
-        console.log("✅ Final Order Details before saving:", orderDetails);
-      } catch (error) {
-        return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
-      }
+    // Validate required fields
+    if (!userId || !name || !amount || !paymentImage) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // Parse order details if needed
+    let parsedOrderDetails = [];
+    try {
+      parsedOrderDetails = Array.isArray(orderDetails) 
+        ? orderDetails 
+        : JSON.parse(orderDetails || '[]');
+    } catch (parseError) {
+      return res.status(400).json({ error: "Invalid orderDetails format" });
+    }
+
+    // Generate new order ID
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
 
+    // Create new order
     const newOrder = new Order({
       id: newId,
       userId,
       name,
-      amount,
-      status,
+      amount: parseFloat(amount),
+      status: status || "Pending",
       phoneNumber,
       deliveryAddress,
-      avatar,
-      paymentImage,
-      orderDetails,
+      paymentImage, // Directly use the S3 URL
+      avatar: "/uploads/default-avatar.png",
+      orderDetails: parsedOrderDetails,
       createdAt: new Date(),
     });
 
     await newOrder.save();
     res.status(201).json(newOrder);
+    
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
     res.status(500).json({ error: error.message });
@@ -174,7 +149,7 @@ exports.deleteAllOrders = async (req, res) => {
 
 exports.getOrderByOrderIdAndUserId = async (req, res) => {
   const { orderId, userId } = req.params;
-  console.log("Fetching order for:", orderId, userId); // Log the parameters
+  console.log("Fetching order for:", orderId, userId);
 
   try {
     const order = await Order.findOne({ id: orderId, userId: userId });
