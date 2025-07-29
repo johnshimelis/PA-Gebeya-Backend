@@ -1,87 +1,90 @@
 const Order = require("../models/Order");
-const Product = require("../models/Product"); // ✅ Import Product Model
 const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
-// ✅ Configure multer for file uploads
+// Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    const uploadDir = "uploads/";
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, uniqueSuffix + ext);
   },
 });
-const upload = multer({ storage });
 
-// ✅ Create New Order
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+}).fields([
+  { name: "paymentImage", maxCount: 1 },
+  { name: "avatar", maxCount: 1 }
+]);
+
+// Middleware to handle file uploads
+exports.uploadFiles = (req, res, next) => {
+  upload(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+};
+
+// Create New Order
 exports.createOrder = async (req, res) => {
   try {
+    // Clean request body
     const cleanedBody = {};
     Object.keys(req.body).forEach((key) => {
       cleanedBody[key.trim()] = req.body[key];
     });
 
-    console.log("📌 Cleaned Request Body:", cleanedBody);
-    console.log("📌 Uploaded Files:", req.files);
-
+    // Extract required fields
     const userId = cleanedBody.userId || "Unknown ID";
     const name = cleanedBody.name || "Unknown";
-    const amount = cleanedBody.amount ? parseFloat(cleanedBody.amount) : 0;
+    const amount = parseFloat(cleanedBody.amount) || 0;
     const phoneNumber = cleanedBody.phoneNumber || "";
     const deliveryAddress = cleanedBody.deliveryAddress || "";
-    const status = cleanedBody.status || "Pending";
+    const status = "Pending"; // Default status
 
-    const avatar = req.files["avatar"]
+    // Handle avatar image
+    const avatar = req.files["avatar"]?.[0]
       ? `/uploads/${req.files["avatar"][0].filename}`
       : "/uploads/default-avatar.png";
 
-    console.log("🖼️ Avatar Path Saved:", avatar);
-
-    const paymentImage = req.files["paymentImage"]
+    // Handle payment image
+    const paymentImage = req.files["paymentImage"]?.[0]
       ? `/uploads/${req.files["paymentImage"][0].filename}`
       : null;
 
-    const productImages = req.files["productImages"]
-      ? req.files["productImages"].map((file) => `/uploads/${file.filename}`)
-      : [];
-
+    // Parse and validate order details
     let orderDetails = [];
     if (cleanedBody.orderDetails) {
       try {
-        orderDetails = JSON.parse(cleanedBody.orderDetails);
-
-        orderDetails = await Promise.all(
-          orderDetails.map(async (item, index) => {
-            const product = await Product.findOne({ name: item.product });
-
-            if (!product) {
-              console.error(`❌ Product not found: ${item.product}`);
-              return null;
-            }
-
-            console.log(`✅ Found Product: ${product.name} - ID: ${product._id}`);
-
-            return {
-              productId: product._id, // ✅ Store actual product ID
-              product: item.product,
-              quantity: item.quantity || 1,
-              price: item.price || 0,
-              productImage: productImages[index] || null,
-            };
-          })
-        );
-
-        orderDetails = orderDetails.filter((item) => item !== null); // Remove null values if any
+        orderDetails = JSON.parse(cleanedBody.orderDetails).map(item => ({
+          productId: item.productId,
+          product: item.product,
+          quantity: parseInt(item.quantity) || 1,
+          price: parseFloat(item.price) || 0,
+          productImage: item.productImage || null,
+        }));
       } catch (error) {
-        return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
+        return res.status(400).json({ error: "Invalid order details format" });
       }
     }
 
-    console.log("✅ Final Order Details before saving:", orderDetails);
-
+    // Generate new order ID
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
 
+    // Create new order document
     const newOrder = new Order({
       id: newId,
       userId,
@@ -96,114 +99,98 @@ exports.createOrder = async (req, res) => {
       createdAt: new Date(),
     });
 
+    // Save to database
     await newOrder.save();
     res.status(201).json(newOrder);
   } catch (error) {
-    console.error("❌ Error creating order:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error("Order creation error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
+// Update Order
 exports.updateOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
 
-    console.log("🔄 Updating Order:", updates);
-
-    const order = await Order.findOneAndUpdate({ id: parseInt(id) }, updates, { new: true });
+    const order = await Order.findOneAndUpdate(
+      { id: parseInt(id) },
+      updates,
+      { new: true, runValidators: true }
+    );
 
     if (!order) {
       return res.status(404).json({ error: "Order not found!" });
     }
 
-    // ✅ If status is "Delivered", update product stock & sold values
-    if (updates.status === "Delivered") {
-      for (const item of order.orderDetails) {
-        const product = await Product.findById(item.productId);
-
-        if (product) {
-          product.sold += item.quantity;
-          product.stockQuantity -= item.quantity;
-          await product.save();
-        } else {
-          console.error(`❌ Product not found for ID: ${item.productId}`);
-        }
-      }
-    }
-
     res.status(200).json(order);
   } catch (error) {
-    console.error("❌ Error updating order:", error.message);
-    res.status(500).json({ error: "Failed to update order." });
+    console.error("Order update error:", error);
+    res.status(500).json({ error: "Failed to update order" });
   }
 };
 
-// ✅ Get all Orders
+// Get all Orders
 exports.getOrders = async (req, res) => {
   try {
-    const orders = await Order.find().select(
-      "id userId name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
-    );
-
-    console.log("📤 Orders Fetched from Database:", JSON.stringify(orders, null, 2));
-
+    const orders = await Order.find().sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {
-    console.error("❌ Error fetching orders:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error("Fetch orders error:", error);
+    res.status(500).json({ error: "Failed to fetch orders" });
   }
 };
 
-// ✅ Get Order By ID
+// Get Order By ID
 exports.getOrderById = async (req, res) => {
   try {
-    const order = await Order.findOne({ id: req.params.id }).select(
-      "id userId name avatar amount status phoneNumber deliveryAddress paymentImage orderDetails createdAt"
-    );
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    const order = await Order.findOne({ id: req.params.id });
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
     res.json(order);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Fetch order error:", error);
+    res.status(500).json({ error: "Failed to fetch order" });
   }
 };
 
-// ✅ Delete Order
+// Delete Order
 exports.deleteOrder = async (req, res) => {
   try {
     const deletedOrder = await Order.findOneAndDelete({ id: req.params.id });
-    if (!deletedOrder) return res.status(404).json({ message: "Order not found" });
+    if (!deletedOrder) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+    
+    // Clean up associated files
+    if (deletedOrder.paymentImage && deletedOrder.paymentImage !== "/uploads/default-payment.jpg") {
+      const filePath = `uploads/${path.basename(deletedOrder.paymentImage)}`;
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+    
     res.json({ message: "Order deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Delete order error:", error);
+    res.status(500).json({ error: "Failed to delete order" });
   }
 };
 
-// ✅ Delete All Orders
-exports.deleteAllOrders = async (req, res) => {
-  try {
-    await Order.deleteMany({});
-    res.json({ message: "All orders deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+// Get Order by Order ID and User ID
 exports.getOrderByOrderIdAndUserId = async (req, res) => {
   const { orderId, userId } = req.params;
-  console.log("Fetching order for:", orderId, userId); // Log the parameters
 
   try {
     const order = await Order.findOne({ id: orderId, userId: userId });
-
     if (!order) {
-      console.log(`No order found for orderId: ${orderId} and userId: ${userId}`);
       return res.status(404).json({ message: "Order not found" });
     }
-
-    res.json({ order });
+    res.json(order);
   } catch (error) {
-    console.error("Error retrieving order details:", error);
+    console.error("Fetch order error:", error);
     res.status(500).json({ message: "Error retrieving order details" });
   }
 };
