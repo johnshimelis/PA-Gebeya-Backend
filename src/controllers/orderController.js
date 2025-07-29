@@ -1,38 +1,28 @@
 const Order = require("../models/Order");
-const Product = require("../models/Product");
-const AWS = require('aws-sdk');
+const Product = require("../models/Product"); // ✅ Import Product Model
 const multer = require("multer");
 
-// Configure AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
+// ✅ Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
 });
-
-// Use memory storage for file handling
-const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// S3 Upload Helper
-const uploadToS3 = async (file, folder) => {
-  const params = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: `${folder}/${Date.now()}-${file.originalname}`,
-    Body: file.buffer,
-    ContentType: file.mimetype,
-    ACL: 'public-read'
-  };
-  return await s3.upload(params).promise();
-};
-
-// Create New Order
+// ✅ Create New Order
 exports.createOrder = async (req, res) => {
   try {
     const cleanedBody = {};
     Object.keys(req.body).forEach((key) => {
       cleanedBody[key.trim()] = req.body[key];
     });
+
+    console.log("📌 Cleaned Request Body:", cleanedBody);
+    console.log("📌 Uploaded Files:", req.files);
 
     const userId = cleanedBody.userId || "Unknown ID";
     const name = cleanedBody.name || "Unknown";
@@ -41,43 +31,39 @@ exports.createOrder = async (req, res) => {
     const deliveryAddress = cleanedBody.deliveryAddress || "";
     const status = cleanedBody.status || "Pending";
 
-    // Process payment image
-    let paymentImageUrl = null;
-    if (req.files?.["paymentImage"]) {
-      const paymentFile = req.files["paymentImage"][0];
-      const s3Result = await uploadToS3(paymentFile, "payments");
-      paymentImageUrl = s3Result.Location;
-    }
+    const avatar = req.files["avatar"]
+      ? `/uploads/${req.files["avatar"][0].filename}`
+      : "/uploads/default-avatar.png";
 
-    // Process avatar if exists
-    let avatarUrl = "/uploads/default-avatar.png";
-    if (req.files?.["avatar"]) {
-      const avatarFile = req.files["avatar"][0];
-      const s3Result = await uploadToS3(avatarFile, "avatars");
-      avatarUrl = s3Result.Location;
-    }
+    console.log("🖼️ Avatar Path Saved:", avatar);
 
-    // Process order details
+    const paymentImage = req.files["paymentImage"]
+      ? `/uploads/${req.files["paymentImage"][0].filename}`
+      : null;
+
     let orderDetails = [];
     if (cleanedBody.orderDetails) {
       try {
-        orderDetails = JSON.parse(cleanedBody.orderDetails).map(item => ({
+        orderDetails = JSON.parse(cleanedBody.orderDetails);
+
+        // ✅ FIX: Use productImage URLs directly from request
+        orderDetails = orderDetails.map(item => ({
           productId: item.productId,
           product: item.product,
           quantity: item.quantity || 1,
           price: item.price || 0,
-          productImage: item.productImage || null,
+          productImage: item.productImage || null, // Use URL from frontend
         }));
+
+        console.log("✅ Final Order Details before saving:", orderDetails);
       } catch (error) {
         return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
       }
     }
 
-    // Generate new order ID
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
 
-    // Create new order
     const newOrder = new Order({
       id: newId,
       userId,
@@ -86,8 +72,8 @@ exports.createOrder = async (req, res) => {
       status,
       phoneNumber,
       deliveryAddress,
-      avatar: avatarUrl,
-      paymentImage: paymentImageUrl,
+      avatar,
+      paymentImage,
       orderDetails,
       createdAt: new Date(),
     });
@@ -100,7 +86,6 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// ... rest of controller methods remain unchanged ...
 // ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
 exports.updateOrder = async (req, res) => {
   try {
