@@ -1,36 +1,76 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const AWS = require('aws-sdk');
+const multer = require("multer");
 
-// ✅ Create New Order (S3 version)
+// Configure AWS S3
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
+});
+
+// Use memory storage for file handling
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+// S3 Upload Helper
+const uploadToS3 = async (file, folder) => {
+  const params = {
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: `${folder}/${Date.now()}-${file.originalname}`,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+    ACL: 'public-read'
+  };
+  return await s3.upload(params).promise();
+};
+
+// Create New Order
 exports.createOrder = async (req, res) => {
   try {
-    // Directly access the JSON body
-    const { 
-      userId, 
-      name, 
-      amount, 
-      status, 
-      phoneNumber, 
-      deliveryAddress, 
-      orderDetails, 
-      paymentImage // S3 URL
-    } = req.body;
+    const cleanedBody = {};
+    Object.keys(req.body).forEach((key) => {
+      cleanedBody[key.trim()] = req.body[key];
+    });
 
-    console.log("📦 Received order data:", req.body);
+    const userId = cleanedBody.userId || "Unknown ID";
+    const name = cleanedBody.name || "Unknown";
+    const amount = cleanedBody.amount ? parseFloat(cleanedBody.amount) : 0;
+    const phoneNumber = cleanedBody.phoneNumber || "";
+    const deliveryAddress = cleanedBody.deliveryAddress || "";
+    const status = cleanedBody.status || "Pending";
 
-    // Validate required fields
-    if (!userId || !name || !amount || !paymentImage) {
-      return res.status(400).json({ error: "Missing required fields" });
+    // Process payment image
+    let paymentImageUrl = null;
+    if (req.files?.["paymentImage"]) {
+      const paymentFile = req.files["paymentImage"][0];
+      const s3Result = await uploadToS3(paymentFile, "payments");
+      paymentImageUrl = s3Result.Location;
     }
 
-    // Parse order details if needed
-    let parsedOrderDetails = [];
-    try {
-      parsedOrderDetails = Array.isArray(orderDetails) 
-        ? orderDetails 
-        : JSON.parse(orderDetails || '[]');
-    } catch (parseError) {
-      return res.status(400).json({ error: "Invalid orderDetails format" });
+    // Process avatar if exists
+    let avatarUrl = "/uploads/default-avatar.png";
+    if (req.files?.["avatar"]) {
+      const avatarFile = req.files["avatar"][0];
+      const s3Result = await uploadToS3(avatarFile, "avatars");
+      avatarUrl = s3Result.Location;
+    }
+
+    // Process order details
+    let orderDetails = [];
+    if (cleanedBody.orderDetails) {
+      try {
+        orderDetails = JSON.parse(cleanedBody.orderDetails).map(item => ({
+          productId: item.productId,
+          product: item.product,
+          quantity: item.quantity || 1,
+          price: item.price || 0,
+          productImage: item.productImage || null,
+        }));
+      } catch (error) {
+        return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
+      }
     }
 
     // Generate new order ID
@@ -42,25 +82,25 @@ exports.createOrder = async (req, res) => {
       id: newId,
       userId,
       name,
-      amount: parseFloat(amount),
-      status: status || "Pending",
+      amount,
+      status,
       phoneNumber,
       deliveryAddress,
-      paymentImage, // Directly use the S3 URL
-      avatar: "/uploads/default-avatar.png",
-      orderDetails: parsedOrderDetails,
+      avatar: avatarUrl,
+      paymentImage: paymentImageUrl,
+      orderDetails,
       createdAt: new Date(),
     });
 
     await newOrder.save();
     res.status(201).json(newOrder);
-    
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
     res.status(500).json({ error: error.message });
   }
 };
 
+// ... rest of controller methods remain unchanged ...
 // ✅ Update Order (Now Updates Product Stock & Sold when Delivered)
 exports.updateOrder = async (req, res) => {
   try {
@@ -149,7 +189,7 @@ exports.deleteAllOrders = async (req, res) => {
 
 exports.getOrderByOrderIdAndUserId = async (req, res) => {
   const { orderId, userId } = req.params;
-  console.log("Fetching order for:", orderId, userId);
+  console.log("Fetching order for:", orderId, userId); // Log the parameters
 
   try {
     const order = await Order.findOne({ id: orderId, userId: userId });
