@@ -41,43 +41,25 @@ exports.createOrder = async (req, res) => {
       ? `/uploads/${req.files["paymentImage"][0].filename}`
       : null;
 
-    const productImages = req.files["productImages"]
-      ? req.files["productImages"].map((file) => `/uploads/${file.filename}`)
-      : [];
-
     let orderDetails = [];
     if (cleanedBody.orderDetails) {
       try {
         orderDetails = JSON.parse(cleanedBody.orderDetails);
 
-        orderDetails = await Promise.all(
-          orderDetails.map(async (item, index) => {
-            const product = await Product.findOne({ name: item.product });
+        // ✅ FIX: Use productImage URLs directly from request
+        orderDetails = orderDetails.map(item => ({
+          productId: item.productId,
+          product: item.product,
+          quantity: item.quantity || 1,
+          price: item.price || 0,
+          productImage: item.productImage || null, // Use URL from frontend
+        }));
 
-            if (!product) {
-              console.error(`❌ Product not found: ${item.product}`);
-              return null;
-            }
-
-            console.log(`✅ Found Product: ${product.name} - ID: ${product._id}`);
-
-            return {
-              productId: product._id, // ✅ Store actual product ID
-              product: item.product,
-              quantity: item.quantity || 1,
-              price: item.price || 0,
-              productImage: productImages[index] || null,
-            };
-          })
-        );
-
-        orderDetails = orderDetails.filter((item) => item !== null); // Remove null values if any
+        console.log("✅ Final Order Details before saving:", orderDetails);
       } catch (error) {
         return res.status(400).json({ error: "Invalid JSON format in orderDetails" });
       }
     }
-
-    console.log("✅ Final Order Details before saving:", orderDetails);
 
     const lastOrder = await Order.findOne().sort({ id: -1 });
     const newId = lastOrder ? lastOrder.id + 1 : 1;
@@ -189,6 +171,7 @@ exports.deleteAllOrders = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 exports.getOrderByOrderIdAndUserId = async (req, res) => {
   const { orderId, userId } = req.params;
   console.log("Fetching order for:", orderId, userId); // Log the parameters
