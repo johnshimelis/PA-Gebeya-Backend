@@ -25,31 +25,34 @@ exports.createOrder = async (req, res) => {
     const deliveryAddress = cleanedBody.deliveryAddress || "";
     const status = cleanedBody.status || "Pending";
 
-    // NEW: read optional payment method/text (kept optional to preserve old behavior)
-    const rawPaymentMethod = (cleanedBody.paymentMethod || "").toString().trim();
+    // Default avatar (can be updated to use S3 if needed)
+    const avatar = "/uploads/default-avatar.png";
+
+    // === NEW: detect Cash on Delivery from request without changing stored schema
+    const rawPaymentMethod =
+      cleanedBody.paymentMethod && cleanedBody.paymentMethod.toString
+        ? cleanedBody.paymentMethod.toString().trim()
+        : "";
     const normalizedPaymentMethod = rawPaymentMethod.toUpperCase();
     const incomingPaymentText =
       cleanedBody.paymentText && cleanedBody.paymentText.toString
         ? cleanedBody.paymentText.toString().trim()
         : null;
 
-    // Default avatar (can be updated to use S3 if needed)
-    const avatar = "/uploads/default-avatar.png";
+    const isCOD =
+      normalizedPaymentMethod === "COD" ||
+      normalizedPaymentMethod === "CASH ON DELIVERY" ||
+      (!!incomingPaymentText &&
+        (incomingPaymentText.toUpperCase() === "COD" ||
+          incomingPaymentText.toUpperCase() === "CASH ON DELIVERY"));
 
-    // Handle payment:
-    // - If COD (or paymentText provided), accept text and skip image upload.
-    // - Else keep existing image upload logic.
+    // Handle payment image upload to S3 OR set "Cash On Delivery"
     let paymentImageUrl = null;
-    let paymentText = null;
-    let paymentMethod = rawPaymentMethod || null;
 
-    const wantsCOD =
-      normalizedPaymentMethod === "COD" || (!!incomingPaymentText && !rawPaymentMethod);
-
-    if (wantsCOD) {
-      paymentMethod = "COD";
-      paymentText = incomingPaymentText || "Cash on Delivery";
-      // No image upload for COD path
+    if (isCOD) {
+      // 👇 Required behavior: save explicit string instead of null
+      paymentImageUrl = "Cash On Delivery";
+      console.log("💵 COD selected, setting paymentImage to 'Cash On Delivery'");
     } else if (req.files && req.files["paymentImage"]) {
       const paymentImageFile = req.files["paymentImage"][0];
       try {
@@ -62,9 +65,6 @@ exports.createOrder = async (req, res) => {
         });
         paymentImageUrl = s3Response.Location;
         console.log("🖼️ Payment Image uploaded to S3:", paymentImageUrl);
-
-        // If no explicit paymentMethod provided, keep old behavior but you can mark it as 'IMAGE' or leave null.
-        if (!paymentMethod) paymentMethod = "IMAGE";
       } catch (s3Error) {
         console.error("❌ S3 Upload Error:", s3Error);
         return res
@@ -103,10 +103,7 @@ exports.createOrder = async (req, res) => {
       phoneNumber,
       deliveryAddress,
       avatar,
-      paymentImage: paymentImageUrl, // S3 URL (if provided)
-      // NEW: persist method/text (harmless if schema already has these fields)
-      paymentMethod: paymentMethod || null,
-      paymentText: paymentText || null,
+      paymentImage: paymentImageUrl, // "Cash On Delivery" for COD, S3 URL otherwise (or null if none provided)
       orderDetails,
       createdAt: new Date(),
     });
@@ -127,26 +124,6 @@ exports.updateOrder = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    // NEW: allow updating COD text or switching method
-    // If caller sets paymentMethod=COD or provides paymentText, accept the text.
-    const bodyPaymentMethod =
-      updates.paymentMethod && updates.paymentMethod.toString
-        ? updates.paymentMethod.toString().trim().toUpperCase()
-        : null;
-    const bodyPaymentText =
-      updates.paymentText && updates.paymentText.toString
-        ? updates.paymentText.toString().trim()
-        : null;
-
-    if (bodyPaymentMethod === "COD" || bodyPaymentText) {
-      updates.paymentMethod = "COD";
-      updates.paymentText = bodyPaymentText || "Cash on Delivery";
-      // Optional: If switching to COD explicitly and no new image uploaded, clear image.
-      if (!(req.files && req.files["paymentImage"])) {
-        updates.paymentImage = null;
-      }
-    }
-
     // Handle payment image update to S3 (kept as-is)
     if (req.files && req.files["paymentImage"]) {
       const paymentImageFile = req.files["paymentImage"][0];
@@ -156,27 +133,36 @@ exports.updateOrder = async (req, res) => {
           folder: "payments",
         });
         updates.paymentImage = s3Response.Location;
-        // If uploading an image, and no method specified, mark method accordingly without breaking old behavior
-        if (!updates.paymentMethod) updates.paymentMethod = "IMAGE";
-        // Clear any previous paymentText if moving away from COD (optional—remove if you prefer to keep it)
-        if (!bodyPaymentMethod || bodyPaymentMethod !== "COD") {
-          // leave paymentText as-is unless you want to explicitly clear it
-        }
       } catch (error) {
         console.error("❌ Payment Image S3 Upload Error:", error);
-        return res
-          .status(500)
-          .json({ error: "Failed to upload payment image" });
+        return res.status(500).json({ error: "Failed to upload payment image" });
       }
     }
 
-    const order = await Order.findOneAndUpdate(
-      { id: parseInt(id) },
-      updates,
-      {
-        new: true,
-      }
-    );
+    // === NEW: if switching/updating to COD, force paymentImage to the COD string
+    const bodyPaymentMethod =
+      updates.paymentMethod && updates.paymentMethod.toString
+        ? updates.paymentMethod.toString().trim().toUpperCase()
+        : null;
+    const bodyPaymentText =
+      updates.paymentText && updates.paymentText.toString
+        ? updates.paymentText.toString().trim().toUpperCase()
+        : null;
+
+    const setToCOD =
+      bodyPaymentMethod === "COD" ||
+      bodyPaymentMethod === "CASH ON DELIVERY" ||
+      bodyPaymentText === "COD" ||
+      bodyPaymentText === "CASH ON DELIVERY";
+
+    if (setToCOD) {
+      updates.paymentImage = "Cash On Delivery";
+      console.log("💵 COD update detected, setting paymentImage to 'Cash On Delivery'");
+    }
+
+    const order = await Order.findOneAndUpdate({ id: parseInt(id) }, updates, {
+      new: true,
+    });
 
     if (!order) {
       return res.status(404).json({ error: "Order not found!" });
@@ -199,7 +185,6 @@ exports.updateOrder = async (req, res) => {
     res.status(500).json({ error: "Failed to update order." });
   }
 };
-
 // ... rest of the controller remains the same ...
 
 // ✅ Get all Orders
