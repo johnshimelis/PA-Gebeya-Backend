@@ -11,7 +11,8 @@ const allowedOrigins = [
   "https://sprightly-sawine-43e5c3.netlify.app",
   "https://chimerical-lebkuchen-58351a.netlify.app", 
   "https://www.pegebeya.com",
-  "https://admin.pegebeya.com"
+  "https://admin.pegebeya.com",
+  "http://localhost:3000"
 ];
 
 // Middleware
